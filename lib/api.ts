@@ -1,5 +1,5 @@
 // const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://chandan-backend1309.onrender.com/api";
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || " http://localhost:5000/api";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://chandan-backend1309.onrender.com/api";
 
 export class ApiError extends Error {
   statusCode: number;
@@ -41,7 +41,7 @@ export async function apiRequest<T = any>(
     const errorMessage =
       (typeof data === "object" && (data.message || data.error)) ||
       `Request failed with status ${response.status}`;
-    
+
     // Auto-logout if token is expired or unauthorized
     if (response.status === 401 && typeof window !== "undefined" && !endpoint.includes("/auth/login")) {
       localStorage.removeItem("chandan_token");
