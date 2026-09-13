@@ -29,6 +29,7 @@ import { Suspense } from "react";
 import Topbar from "../../../components/Topbar";
 import StatCard from "../../../components/StatCard";
 import { api } from "../../../lib/api";
+import { formatPlantName } from "../../../lib/plants";
 
 function TraceabilityContent() {
   const searchParams = useSearchParams();
@@ -45,27 +46,42 @@ function TraceabilityContent() {
   }, [queryHeat]);
 
   // Fetch executive metrics summary
-  const { data: summaryData } = useQuery({
+  const {
+    data: summaryData,
+    refetch: refetchSummary,
+    isFetching: isSummaryFetching
+  } = useQuery({
     queryKey: ["traceability-summary"],
-    queryFn: () => api.get("/traceability/summary")
+    queryFn: () => api.get("/traceability/summary"),
+    staleTime: 0,
+    refetchOnWindowFocus: true
   });
 
   // Fetch all heats for quick lookup
-  const { data: heatsData } = useQuery({
+  const {
+    data: heatsData,
+    refetch: refetchHeats,
+    isFetching: isHeatsFetching
+  } = useQuery({
     queryKey: ["billet-heats"],
-    queryFn: () => api.get("/billets/heats")
+    queryFn: () => api.get("/billets/heats"),
+    staleTime: 0,
+    refetchOnWindowFocus: true
   });
 
   // Fetch specific heat traceability when activeHeat is set
   const {
     data: heatTraceData,
     isLoading: isHeatLoading,
+    isFetching: isHeatFetching,
     error: heatError,
     refetch: refetchHeat
   } = useQuery({
     queryKey: ["heat-traceability", activeHeat],
     queryFn: () => api.get(`/traceability/heat/${activeHeat}`),
-    enabled: !!activeHeat
+    enabled: !!activeHeat,
+    staleTime: 0,
+    refetchOnWindowFocus: true
   });
 
   const summary = summaryData?.data || {};
@@ -89,9 +105,12 @@ function TraceabilityContent() {
   const ledger = trace?.material_balance_reconciliation || trace?.material_balance_ledger || {};
   const dispatchedMt = Number(ledger.total_sent_to_plant_mt ?? ledger.dispatched_mt ?? 0);
   const finishedMt = Number(ledger.good_finished_product_weight_mt ?? ledger.finished_mt ?? 0);
-  const scrapMt = Number(ledger.rejection_scrap_loss_mt ?? ledger.rejection_scrap_mt ?? 0);
-  const returnedMt = Number(ledger.returned_to_yard_or_remelt_mt ?? ledger.returned_mt ?? 0);
-  const scaleLossMt = Number(ledger.scale_loss_or_burning_loss_mt ?? ledger.unaccounted_delta_or_scale_loss_mt ?? 0);
+  const scrapMt = Math.max(0, Number(ledger.rejection_scrap_loss_mt ?? ledger.rejection_scrap_mt ?? 0));
+  const returnedMt = Math.max(0, Number(ledger.returned_to_yard_or_remelt_mt ?? ledger.returned_mt ?? 0));
+  const rawScaleLoss = Number(ledger.scale_loss_or_burning_loss_mt ?? ledger.unaccounted_delta_or_scale_loss_mt ?? 0);
+  const scaleLossMt = Math.max(0, rawScaleLoss > 0.0005 ? rawScaleLoss : 0);
+  const discrepancyMt = Number(ledger.discrepancy_mt ?? (rawScaleLoss < -0.0005 ? Math.abs(rawScaleLoss) : 0));
+  const isBalanced = ledger.is_balanced ?? (Math.abs(rawScaleLoss) < 0.0005);
   const recoveryPct = Number(ledger.rolling_yield_recovery_pct ?? ledger.overall_recovery_rate_pct ?? 0);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -105,10 +124,11 @@ function TraceabilityContent() {
     <>
       <Topbar
         pageTitle="360° End-to-End Billet Traceability"
-        subtitle="Unbroken digital pedigree: continuous casting, multi-length cuts, lab spectrometer certification, plant transfers, prime products, and scrap reconciliation."
+        mobileTitle="Heat Traceability"
+        pageSubtitle="Unbroken digital pedigree: continuous casting, multi-length cuts, lab spectrometer certification, plant transfers, prime products, and scrap reconciliation."
       />
 
-      <main className="p-4 sm:p-6 lg:p-8 space-y-6 flex-1 font-sans">
+      <main className="p-3 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 flex-1 font-sans">
         {/* Action Header with unified brand matching */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 font-sans">
           <div className="flex items-start gap-3 sm:gap-4">
@@ -178,8 +198,8 @@ function TraceabilityContent() {
         {/* IF NO HEAT SELECTED: SHOW EXECUTIVE KPI DASHBOARD */}
         {!activeHeat && (
           <div className="space-y-6">
-            {/* Executive Overview KPI cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Executive Overview KPI cards - 2x2 on mobile, 4 on desktop */}
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
               <StatCard
                 label="Total Continuous Cast Heats"
                 value={summary.heats_count || heats.length || 0}
@@ -212,7 +232,7 @@ function TraceabilityContent() {
 
             {/* Quick Heat Directory Card */}
             <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-5 space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h3 className="text-base font-bold text-slate-900">
                     Select a Billet Heat for Complete Traceability
@@ -221,9 +241,22 @@ function TraceabilityContent() {
                     Inspect the complete material balance ledger and 6-stage lifecycle for any heat.
                   </p>
                 </div>
-                <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200">
-                  {heats.length} Heats Available
-                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      refetchSummary();
+                      refetchHeats();
+                    }}
+                    title="Refresh heats and metrics"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition-all cursor-pointer font-sans"
+                  >
+                    <RotateCcw className={`w-3.5 h-3.5 ${isSummaryFetching || isHeatsFetching ? "animate-spin text-orange-600" : ""}`} />
+                    <span>Sync Live</span>
+                  </button>
+                  <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200">
+                    {heats.length} Heats Available
+                  </span>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -334,6 +367,15 @@ function TraceabilityContent() {
 
               <div className="flex flex-wrap items-center gap-3">
                 <button
+                  onClick={() => refetchHeat()}
+                  disabled={isHeatFetching}
+                  className="inline-flex items-center gap-2 px-3.5 py-2 bg-white/10 hover:bg-white/20 active:scale-95 text-white text-xs font-bold rounded-xl backdrop-blur-sm border border-white/20 transition-all cursor-pointer"
+                  title="Force re-fetch live thread from database"
+                >
+                  <RotateCcw className={`w-4 h-4 ${isHeatFetching ? "animate-spin text-orange-400" : ""}`} />
+                  <span>{isHeatFetching ? "Syncing Live..." : "Refresh Live Pedigree"}</span>
+                </button>
+                <button
                   onClick={() => window.print()}
                   className="inline-flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl backdrop-blur-sm border border-white/20 transition-colors cursor-pointer"
                 >
@@ -400,8 +442,20 @@ function TraceabilityContent() {
                   Material Balance Reconciliation Ledger
                 </h3>
               </div>
-              <span className="text-xs font-bold text-orange-700 bg-orange-50 px-2.5 py-1 rounded-lg border border-orange-200">
-                Continuous Yield Audit
+              <span
+                className={`text-xs font-bold px-2.5 py-1 rounded-lg border ${
+                  isBalanced
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    : discrepancyMt > 0.0005
+                    ? "bg-amber-50 text-amber-700 border-amber-200"
+                    : "bg-orange-50 text-orange-700 border-orange-200"
+                }`}
+              >
+                {isBalanced
+                  ? "✓ 100% Balanced Audit"
+                  : discrepancyMt > 0.0005
+                  ? `⚠️ Material Discrepancy (+${discrepancyMt.toFixed(3)} MT)`
+                  : "Continuous Yield Audit"}
               </span>
             </div>
 
@@ -448,12 +502,52 @@ function TraceabilityContent() {
                 <span className="text-[10px] text-amber-600 block">Unused billets</span>
               </div>
 
-              <div className="p-3 bg-slate-100/60 border border-slate-200/80 rounded-xl text-xs">
-                <span className="text-slate-700 block text-[10px]">6. SCALE LOSS / DELTA</span>
-                <span className="text-sm font-bold text-slate-900">
-                  {scaleLossMt.toFixed(3)} MT
+              <div
+                className={`p-3 rounded-xl border text-xs transition-all ${
+                  isBalanced
+                    ? "bg-emerald-50/60 border-emerald-200/90 text-emerald-950"
+                    : discrepancyMt > 0.0005
+                    ? "bg-amber-50/70 border-amber-300 text-amber-950"
+                    : "bg-slate-100/60 border-slate-200/80 text-slate-950"
+                }`}
+              >
+                <span
+                  className={`block text-[10px] uppercase font-bold ${
+                    isBalanced
+                      ? "text-emerald-700"
+                      : discrepancyMt > 0.0005
+                      ? "text-amber-700"
+                      : "text-slate-700"
+                  }`}
+                >
+                  6. SCALE LOSS / DELTA
                 </span>
-                <span className="text-[10px] text-slate-500 block">Furnace burning loss</span>
+                <span
+                  className={`text-sm font-black font-mono block mt-0.5 ${
+                    isBalanced
+                      ? "text-emerald-700"
+                      : discrepancyMt > 0.0005
+                      ? "text-amber-800"
+                      : "text-slate-900"
+                  }`}
+                >
+                  {isBalanced ? "0.000 MT" : discrepancyMt > 0.0005 ? `+${discrepancyMt.toFixed(3)} MT` : `${scaleLossMt.toFixed(3)} MT`}
+                </span>
+                <span
+                  className={`text-[10px] block mt-0.5 font-semibold ${
+                    isBalanced
+                      ? "text-emerald-600"
+                      : discrepancyMt > 0.0005
+                      ? "text-amber-700"
+                      : "text-slate-500"
+                  }`}
+                >
+                  {isBalanced
+                    ? "✓ 100% Balanced"
+                    : discrepancyMt > 0.0005
+                    ? "⚠️ Discrepancy"
+                    : "Furnace burning loss"}
+                </span>
               </div>
             </div>
           </div>
@@ -482,12 +576,12 @@ function TraceabilityContent() {
                   </div>
                 </div>
                 <span className="text-xs font-bold text-orange-700 bg-orange-50 px-2.5 py-1 rounded-lg border border-orange-200">
-                  {trace.casting_details?.cast_pieces} Pieces Total
+                  {castPieces} Pieces Total
                 </span>
               </div>
 
               <div className="mt-4 overflow-x-auto border border-slate-200/80 rounded-xl">
-                <table className="min-w-full text-xs text-left">
+                <table className="min-w-full text-xs text-left whitespace-nowrap">
                   <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
                     <tr>
                       <th className="py-2.5 px-3">Cut Length</th>
@@ -618,7 +712,7 @@ function TraceabilityContent() {
                 </div>
               ) : (
                 <div className="mt-4 overflow-x-auto border border-slate-200/80 rounded-xl">
-                  <table className="min-w-full text-xs text-left">
+                  <table className="min-w-full text-xs text-left whitespace-nowrap">
                     <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
                       <tr>
                         <th className="py-2.5 px-3">Dispatch #</th>
@@ -636,7 +730,7 @@ function TraceabilityContent() {
                             {d.dispatch_number}
                           </td>
                           <td className="py-2.5 px-3 font-bold text-slate-800">
-                            {d.target_plant}
+                            {formatPlantName(d.target_plant)}
                           </td>
                           <td className="py-2.5 px-3 font-semibold text-slate-900">
                             {d.dispatched_pieces} pcs
@@ -694,7 +788,7 @@ function TraceabilityContent() {
                 </div>
               ) : (
                 <div className="mt-4 overflow-x-auto border border-slate-200/80 rounded-xl">
-                  <table className="min-w-full text-xs text-left">
+                  <table className="min-w-full text-xs text-left whitespace-nowrap">
                     <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
                       <tr>
                         <th className="py-2.5 px-3">Product Name & Spec</th>
@@ -717,7 +811,7 @@ function TraceabilityContent() {
                           <td className="py-2.5 px-3 font-bold text-slate-900">
                             {fp.finished_size}
                           </td>
-                          <td className="py-2.5 px-3 text-slate-700">{fp.mill_name}</td>
+                          <td className="py-2.5 px-3 text-slate-700">{formatPlantName(fp.mill_name)}</td>
                           <td className="py-2.5 px-3">{fp.finished_pieces} pcs</td>
                           <td className="py-2.5 px-3 font-mono font-bold text-emerald-700">
                             {Number(fp.finished_weight_mt).toFixed(3)} MT
@@ -773,9 +867,14 @@ function TraceabilityContent() {
                           </span>
                           <span className="text-[10px] text-slate-600">{r.rejection_reason}</span>
                         </div>
-                        <span className="font-mono font-bold text-rose-700">
-                          {Number(r.rejected_weight_mt).toFixed(3)} MT
-                        </span>
+                        <div className="text-right">
+                          <span className="font-mono font-bold text-rose-700 block">
+                            {Number(r.rejected_weight_mt).toFixed(3)} MT
+                          </span>
+                          <span className="text-[10px] font-semibold text-rose-600">
+                            {r.rejected_pieces || 0} pcs
+                          </span>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -816,13 +915,18 @@ function TraceabilityContent() {
                       >
                         <div>
                           <span className="font-bold text-amber-900 block">
-                            {pr.return_type.replace(/_/g, " ")} (From {pr.source_plant || pr.returned_from})
+                            {pr.return_type.replace(/_/g, " ")} (From {formatPlantName(pr.source_plant || pr.returned_from)})
                           </span>
                           <span className="text-[10px] text-slate-600">{pr.return_reason}</span>
                         </div>
-                        <span className="font-mono font-bold text-amber-700">
-                          {Number(pr.returned_weight_mt).toFixed(3)} MT
-                        </span>
+                        <div className="text-right">
+                          <span className="font-mono font-bold text-amber-700 block">
+                            {Number(pr.returned_weight_mt).toFixed(3)} MT
+                          </span>
+                          <span className="text-[10px] font-semibold text-amber-600">
+                            {pr.returned_pieces || 0} pcs
+                          </span>
+                        </div>
                       </div>
                     ))}
                   </div>

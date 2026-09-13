@@ -119,7 +119,10 @@ export default function BilletsPage() {
     mutationFn: (newHeat: any) => api.post("/billets/heats", newHeat),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["billet-heats"] });
+      queryClient.invalidateQueries({ queryKey: ["recent-heats"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-metrics"] });
+      queryClient.invalidateQueries({ queryKey: ["traceability-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["heat-traceability"] });
       setIsModalOpen(false);
       setFormError(null);
       setHeatNumber("");
@@ -137,7 +140,10 @@ export default function BilletsPage() {
     mutationFn: ({ id, data }: { id: string; data: any }) => api.put(`/billets/heats/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["billet-heats"] });
+      queryClient.invalidateQueries({ queryKey: ["recent-heats"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-metrics"] });
+      queryClient.invalidateQueries({ queryKey: ["traceability-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["heat-traceability"] });
       setEditingHeat(null);
       setEditError(null);
     },
@@ -150,7 +156,10 @@ export default function BilletsPage() {
     mutationFn: (id: string) => api.delete(`/billets/heats/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["billet-heats"] });
+      queryClient.invalidateQueries({ queryKey: ["recent-heats"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-metrics"] });
+      queryClient.invalidateQueries({ queryKey: ["traceability-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["heat-traceability"] });
       if (selectedHeat) setSelectedHeat(null);
     },
     onError: (err: any) => {
@@ -162,6 +171,9 @@ export default function BilletsPage() {
     mutationFn: (data: any) => api.post("/billets/lengths", data),
     onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: ["billet-heats"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-metrics"] });
+      queryClient.invalidateQueries({ queryKey: ["traceability-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["heat-traceability"] });
       setIsAddingLength(false);
       // update selectedHeat local length state if open
       if (selectedHeat && res?.data) {
@@ -180,6 +192,9 @@ export default function BilletsPage() {
     mutationFn: (lengthId: string) => api.delete(`/billets/lengths/${lengthId}`),
     onSuccess: (_, lengthId) => {
       queryClient.invalidateQueries({ queryKey: ["billet-heats"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-metrics"] });
+      queryClient.invalidateQueries({ queryKey: ["traceability-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["heat-traceability"] });
       if (selectedHeat) {
         setSelectedHeat({
           ...selectedHeat,
@@ -406,10 +421,11 @@ export default function BilletsPage() {
     <>
       <Topbar
         pageTitle="Cast Billets & Heat Master"
+        mobileTitle="Billet Casting"
         pageSubtitle="SMS casting, multi-length cut management (7.4m, 5.0m, 5.4m) & yard inventory"
       />
 
-      <main className="p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6 lg:space-y-8 flex-1 font-sans">
+      <main className="p-3.5 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 lg:space-y-8 flex-1 font-sans">
         {/* Hero Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 font-sans">
           <div className="flex items-start gap-3 sm:gap-4">
@@ -434,14 +450,14 @@ export default function BilletsPage() {
           <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
             <button
               onClick={() => refetch()}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-700 shadow-xs transition-colors cursor-pointer"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-700 shadow-xs transition-colors cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isRefetching ? "animate-spin" : ""}`} />
               <span>Refresh</span>
             </button>
             <button
               onClick={() => setIsModalOpen(true)}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white text-xs font-bold shadow-md shadow-orange-500/25 transition-all cursor-pointer"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white text-xs font-bold shadow-md shadow-orange-500/25 transition-all cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Cast New Heat</span>
@@ -450,7 +466,7 @@ export default function BilletsPage() {
         </div>
 
         {/* StatCards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4 lg:gap-5">
           <StatCard
             title="TOTAL HEATS"
             value={isLoading ? "..." : (pagination?.total ?? heats.length)}
@@ -546,7 +562,7 @@ export default function BilletsPage() {
           )}
 
           {/* Core Fields */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
                 Heat Number *
@@ -556,7 +572,7 @@ export default function BilletsPage() {
                 required
                 value={heatNumber}
                 onChange={(e) => setHeatNumber(e.target.value.toUpperCase())}
-                placeholder="e.g. HEAT-2026-CH03"
+                placeholder="e.g. CH-XX01"
                 className="w-full px-3 py-2 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
               />
             </div>
@@ -571,7 +587,7 @@ export default function BilletsPage() {
                 list="grades-options"
                 value={grade}
                 onChange={(e) => setGrade(e.target.value)}
-                placeholder="e.g. AISI 304, AISI 316L"
+                placeholder="e.g.  304,316L"
                 className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
               />
               <datalist id="grades-options">
@@ -629,16 +645,16 @@ export default function BilletsPage() {
                 return (
                   <div
                     key={idx}
-                    className="p-3 bg-white rounded-xl border border-slate-200/80 flex items-center gap-2.5 shadow-2xs flex-wrap sm:flex-nowrap"
+                    className="p-3 bg-white rounded-xl border border-slate-200/80 grid grid-cols-2 sm:flex sm:items-center sm:gap-2.5 gap-2.5 shadow-2xs relative"
                   >
-                    <div className="w-24 sm:w-28">
+                    <div className="col-span-1 sm:w-28">
                       <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">
                         Length (m)
                       </label>
                       <input
                         type="number"
-                        step="0.1"
-                        min="0.1"
+                        step="any"
+                        min="0"
                         required
                         value={row.length_meters}
                         onChange={(e) =>
@@ -648,13 +664,14 @@ export default function BilletsPage() {
                       />
                     </div>
 
-                    <div className="w-20 sm:w-24">
+                    <div className="col-span-1 sm:w-24">
                       <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">
                         Pieces
                       </label>
                       <input
                         type="number"
                         min="1"
+                        step="1"
                         required
                         value={row.piece_count}
                         onChange={(e) =>
@@ -664,14 +681,14 @@ export default function BilletsPage() {
                       />
                     </div>
 
-                    <div className="w-28 sm:w-32">
+                    <div className="col-span-1 sm:w-32">
                       <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5" title="Manual weight input per billet cut">
                         Piece Wt (kg)
                       </label>
                       <input
                         type="number"
-                        step="0.1"
-                        min="0.1"
+                        step="any"
+                        min="0"
                         required
                         value={displayPcWt}
                         onChange={(e) =>
@@ -682,14 +699,14 @@ export default function BilletsPage() {
                       />
                     </div>
 
-                    <div className="w-28 sm:w-32">
+                    <div className="col-span-1 sm:w-32">
                       <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5" title="Manual total weight in metric tons">
                         Total MT
                       </label>
                       <input
                         type="number"
-                        step="0.001"
-                        min="0.001"
+                        step="any"
+                        min="0"
                         required
                         value={displayTotMt}
                         onChange={(e) =>
@@ -700,14 +717,17 @@ export default function BilletsPage() {
                       />
                     </div>
 
-                    <button
-                      type="button"
-                      disabled={lengths.length <= 1}
-                      onClick={() => handleRemoveLengthRow(idx)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-30 transition-colors cursor-pointer"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="col-span-2 sm:col-span-1 flex justify-end sm:justify-center sm:pt-4">
+                      <button
+                        type="button"
+                        disabled={lengths.length <= 1}
+                        onClick={() => handleRemoveLengthRow(idx)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-30 transition-colors cursor-pointer"
+                        title="Remove cut length"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -815,8 +835,8 @@ export default function BilletsPage() {
                       <label className="block text-[11px] font-bold text-slate-600 mb-1">Length (Meters) *</label>
                       <input
                         type="number"
-                        step="0.1"
-                        min="0.5"
+                        step="any"
+                        min="0"
                         required
                         value={newLengthMeters}
                         onChange={(e) => {
@@ -832,6 +852,7 @@ export default function BilletsPage() {
                       <input
                         type="number"
                         min="1"
+                        step="1"
                         required
                         value={newPieceCount}
                         onChange={(e) => setNewPieceCount(parseInt(e.target.value, 10) || 0)}
@@ -842,8 +863,8 @@ export default function BilletsPage() {
                       <label className="block text-[11px] font-bold text-slate-600 mb-1">Weight / Pc (kg) *</label>
                       <input
                         type="number"
-                        step="0.1"
-                        min="1"
+                        step="any"
+                        min="0"
                         required
                         value={newWeightPerPieceKg}
                         onChange={(e) => setNewWeightPerPieceKg(parseFloat(e.target.value) || 0)}

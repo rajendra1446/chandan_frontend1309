@@ -16,7 +16,10 @@ import {
   Flame,
   Sparkles,
   ExternalLink,
-  SlidersHorizontal
+  SlidersHorizontal,
+  RotateCcw,
+  X,
+  PlusCircle
 } from "lucide-react";
 import Topbar from "../../../components/Topbar";
 import StatCard from "../../../components/StatCard";
@@ -26,53 +29,28 @@ import { ColumnDef } from "@tanstack/react-table";
 import { api } from "../../../lib/api";
 import { labCheckSchema } from "../../../lib/schemas";
 
-// Standard ASTM element ranges for quick reference and pre-fill presets
-const GRADE_PRESETS: Record<string, any> = {
-  "AISI 304": {
-    c_percent: 0.065,
-    mn_percent: 1.82,
-    si_percent: 0.54,
-    s_percent: 0.012,
-    p_percent: 0.028,
-    cr_percent: 18.25,
-    ni_percent: 8.15,
-    mo_percent: 0.21,
-    cu_percent: 0.18
-  },
-  "AISI 316L": {
-    c_percent: 0.025,
-    mn_percent: 1.65,
-    si_percent: 0.52,
-    s_percent: 0.011,
-    p_percent: 0.026,
-    cr_percent: 16.85,
-    ni_percent: 10.25,
-    mo_percent: 2.15,
-    cu_percent: 0.15
-  },
-  "AISI 201": {
-    c_percent: 0.095,
-    mn_percent: 7.15,
-    si_percent: 0.65,
-    s_percent: 0.014,
-    p_percent: 0.035,
-    cr_percent: 16.20,
-    ni_percent: 4.10,
-    mo_percent: 0.08,
-    cu_percent: 1.25
-  },
-  "EN8 / 080M40": {
-    c_percent: 0.40,
-    mn_percent: 0.80,
-    si_percent: 0.25,
-    s_percent: 0.025,
-    p_percent: 0.025,
-    cr_percent: 0.15,
-    ni_percent: 0.10,
-    mo_percent: 0.02,
-    cu_percent: 0.12
-  }
-};
+// Standard ASTM alloy element list for quick custom addition
+const STANDARD_ALLOY_OPTIONS = [
+  { symbol: "V", name: "Vanadium" },
+  { symbol: "Ti", name: "Titanium" },
+  { symbol: "Al", name: "Aluminium" },
+  { symbol: "N", name: "Nitrogen" },
+  { symbol: "Nb", name: "Niobium" },
+  { symbol: "B", name: "Boron" },
+  { symbol: "Co", name: "Cobalt" },
+  { symbol: "W", name: "Tungsten" },
+  { symbol: "Pb", name: "Lead" },
+  { symbol: "Sn", name: "Tin" },
+  { symbol: "As", name: "Arsenic" },
+  { symbol: "CUSTOM", name: "Custom Element..." }
+];
+
+export interface CustomElementItem {
+  id: string;
+  symbol: string;
+  name: string;
+  percent: string | number;
+}
 
 export default function LabPage() {
   const queryClient = useQueryClient();
@@ -85,24 +63,30 @@ export default function LabPage() {
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState("");
 
-  // Form State
+  // Form State - start clean with NO static pre-filled dummy numbers
   const [formData, setFormData] = useState({
     heat_id: "",
-    test_certificate_no: "TC-CH-2026-0809",
-    c_percent: 0.065,
-    mn_percent: 1.82,
-    si_percent: 0.54,
-    s_percent: 0.012,
-    p_percent: 0.028,
-    cr_percent: 18.25,
-    ni_percent: 8.15,
-    mo_percent: 0.21,
-    cu_percent: 0.18,
+    test_certificate_no: "",
+    c_percent: "" as string | number,
+    mn_percent: "" as string | number,
+    si_percent: "" as string | number,
+    s_percent: "" as string | number,
+    p_percent: "" as string | number,
+    cr_percent: "" as string | number,
+    ni_percent: "" as string | number,
+    mo_percent: "" as string | number,
+    cu_percent: "" as string | number,
     surface_quality: "Clean, crack-free sound surface",
     internal_soundness: "Sound macrostructure",
     verdict: "APPROVED" as const,
-    lab_remarks: "Chemical and metallurgical test compliant with ASTM A276 specification"
+    lab_remarks: ""
   });
+
+  // Dynamic custom chemistry options state
+  const [customElements, setCustomElements] = useState<CustomElementItem[]>([]);
+  const [selectedAlloyToAdd, setSelectedAlloyToAdd] = useState("V");
+  const [customSymbolInput, setCustomSymbolInput] = useState("");
+  const [customNameInput, setCustomNameInput] = useState("");
 
   // 1. Fetch Heats with Backend Pagination & Search
   const {
@@ -126,7 +110,10 @@ export default function LabPage() {
     mutationFn: (payload: any) => api.post("/lab/check", payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["billet-heats"] });
+      queryClient.invalidateQueries({ queryKey: ["recent-heats"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-metrics"] });
+      queryClient.invalidateQueries({ queryKey: ["traceability-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["heat-traceability"] });
       setIsModalOpen(false);
       setSelectedChemicalAnalysis(null);
       setFormError(null);
@@ -140,82 +127,146 @@ export default function LabPage() {
     mutationFn: (labId: string) => api.delete(`/lab/${labId}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["billet-heats"] });
+      queryClient.invalidateQueries({ queryKey: ["recent-heats"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-metrics"] });
+      queryClient.invalidateQueries({ queryKey: ["traceability-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["heat-traceability"] });
     },
     onError: (err: any) => {
       alert(err.message || "Failed to delete lab certificate.");
     }
   });
 
+  // Open modal - cleanly populate if existing, otherwise blank without dummy values
   const handleOpenModal = (heatId?: string, heatNo?: string, existingLab?: any) => {
-    if (heatId) {
-      setFormData({
-        heat_id: heatId,
-        test_certificate_no: existingLab?.lab_certificate_no || existingLab?.test_certificate_no || `TC-${heatNo || "CH"}`,
-        c_percent: existingLab?.c_percent ?? 0.08,
-        mn_percent: existingLab?.mn_percent ?? 1.45,
-        si_percent: existingLab?.si_percent ?? 0.42,
-        s_percent: existingLab?.s_percent ?? 0.015,
-        p_percent: existingLab?.p_percent ?? 0.025,
-        cr_percent: existingLab?.cr_percent ?? 18.25,
-        ni_percent: existingLab?.ni_percent ?? 8.15,
-        mo_percent: existingLab?.mo_percent ?? 0.22,
-        cu_percent: existingLab?.cu_percent ?? 0.18,
-        surface_quality: existingLab?.surface_quality || "Clean, crack-free sound surface",
-        internal_soundness: existingLab?.internal_soundness || "Sound macrostructure",
-        verdict: (existingLab?.lab_verdict || existingLab?.verdict || "APPROVED") as any,
-        lab_remarks: existingLab?.lab_remarks || existingLab?.remarks || "Spectro check completed"
-      });
-    } else if (heats.length > 0) {
-      const defaultHeat = heats[0];
-      setFormData({
-        heat_id: defaultHeat.id || defaultHeat._id,
-        test_certificate_no: defaultHeat.lab_certificate_no || `TC-${defaultHeat.heat_number}`,
-        c_percent: defaultHeat.c_percent ?? 0.08,
-        mn_percent: defaultHeat.mn_percent ?? 1.45,
-        si_percent: defaultHeat.si_percent ?? 0.42,
-        s_percent: defaultHeat.s_percent ?? 0.015,
-        p_percent: defaultHeat.p_percent ?? 0.025,
-        cr_percent: defaultHeat.cr_percent ?? 18.25,
-        ni_percent: defaultHeat.ni_percent ?? 8.15,
-        mo_percent: defaultHeat.mo_percent ?? 0.22,
-        cu_percent: defaultHeat.cu_percent ?? 0.18,
-        surface_quality: defaultHeat.surface_quality || "Clean, crack-free sound surface",
-        internal_soundness: defaultHeat.internal_soundness || "Sound macrostructure",
-        verdict: (defaultHeat.lab_verdict || "APPROVED") as any,
-        lab_remarks: defaultHeat.lab_remarks || "Spectro check completed"
-      });
-    }
+    const targetHeatId = heatId || (heats.length > 0 ? heats[0].id || heats[0]._id : "");
+    const targetHeatNo = heatNo || (heats.length > 0 ? heats[0].heat_number : "");
+    const targetLab = existingLab || (targetHeatId ? heats.find((h: any) => (h.id || h._id) === targetHeatId) : null);
+
+    const hasTested = targetLab && targetLab.c_percent !== null && targetLab.c_percent !== undefined;
+
+    setFormData({
+      heat_id: targetHeatId,
+      test_certificate_no:
+        targetLab?.lab_certificate_no || targetLab?.test_certificate_no || `TC-${targetHeatNo || "CH"}`,
+      c_percent: hasTested && targetLab.c_percent !== undefined ? targetLab.c_percent : "",
+      mn_percent: hasTested && targetLab.mn_percent !== undefined ? targetLab.mn_percent : "",
+      si_percent: hasTested && targetLab.si_percent !== undefined ? targetLab.si_percent : "",
+      s_percent: hasTested && targetLab.s_percent !== undefined ? targetLab.s_percent : "",
+      p_percent: hasTested && targetLab.p_percent !== undefined ? targetLab.p_percent : "",
+      cr_percent: hasTested && targetLab.cr_percent !== undefined ? targetLab.cr_percent : "",
+      ni_percent: hasTested && targetLab.ni_percent !== undefined ? targetLab.ni_percent : "",
+      mo_percent: hasTested && targetLab.mo_percent !== undefined ? targetLab.mo_percent : "",
+      cu_percent: hasTested && targetLab.cu_percent !== undefined ? targetLab.cu_percent : "",
+      surface_quality: targetLab?.surface_quality || "Clean, crack-free sound surface",
+      internal_soundness: targetLab?.internal_soundness || "Sound macrostructure",
+      verdict: (targetLab?.lab_verdict || targetLab?.verdict || "APPROVED") as any,
+      lab_remarks: targetLab?.lab_remarks || targetLab?.remarks || ""
+    });
+
+    const other = targetLab?.other_elements || targetLab?.chemical_analysis?.other_elements || {};
+    const loadedCustom: CustomElementItem[] = Object.entries(other).map(([sym, val], idx) => ({
+      id: `elem-loaded-${idx}-${Date.now()}`,
+      symbol: sym,
+      name: STANDARD_ALLOY_OPTIONS.find((o) => o.symbol.toUpperCase() === sym.toUpperCase())?.name || sym,
+      percent: val !== null && val !== undefined ? String(val) : ""
+    }));
+    setCustomElements(loadedCustom);
+    setFormError(null);
     setIsModalOpen(true);
   };
 
-  const handleApplyPreset = (presetKey: string) => {
-    const p = GRADE_PRESETS[presetKey];
-    if (p) {
-      setFormData((prev) => ({
-        ...prev,
-        ...p,
-        lab_remarks: `Applied standard nominal chemistry for ${presetKey}`
-      }));
+  // Clear all fields so chemist can enter clean values
+  const handleClearValues = () => {
+    setFormData((prev) => ({
+      ...prev,
+      c_percent: "",
+      mn_percent: "",
+      si_percent: "",
+      s_percent: "",
+      p_percent: "",
+      cr_percent: "",
+      ni_percent: "",
+      mo_percent: "",
+      cu_percent: "",
+      lab_remarks: ""
+    }));
+    setCustomElements([]);
+  };
+
+  // Add custom chemistry option
+  const handleAddCustomElement = () => {
+    let sym = selectedAlloyToAdd;
+    let name = "";
+
+    if (sym === "CUSTOM") {
+      const trimmedSym = customSymbolInput.trim().toUpperCase();
+      if (!trimmedSym) {
+        alert("Please enter an element chemical symbol (e.g. Ti, V, Al).");
+        return;
+      }
+      sym = trimmedSym;
+      name = customNameInput.trim() || `Element ${sym}`;
+    } else {
+      const match = STANDARD_ALLOY_OPTIONS.find((o) => o.symbol === sym);
+      name = match?.name || sym;
     }
+
+    if (customElements.some((e) => e.symbol.toUpperCase() === sym.toUpperCase())) {
+      alert(`Element ${sym} is already added in this chemical analysis.`);
+      return;
+    }
+
+    setCustomElements((prev) => [
+      ...prev,
+      {
+        id: `elem-${Date.now()}-${Math.random().toString().slice(-4)}`,
+        symbol: sym,
+        name,
+        percent: ""
+      }
+    ]);
+
+    setCustomSymbolInput("");
+    setCustomNameInput("");
+    setSelectedAlloyToAdd("V");
+  };
+
+  const handleRemoveCustomElement = (id: string) => {
+    setCustomElements((prev) => prev.filter((e) => e.id !== id));
+  };
+
+  const handleCustomElementChange = (id: string, value: string) => {
+    setCustomElements((prev) =>
+      prev.map((e) => (e.id === id ? { ...e, percent: value } : e))
+    );
   };
 
   const handleLabSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
+    const otherObj: Record<string, number> = {};
+    customElements.forEach((el) => {
+      if (el.symbol && el.symbol.trim()) {
+        const val = parseFloat(String(el.percent));
+        otherObj[el.symbol.trim().toUpperCase()] = isNaN(val) ? 0 : val;
+      }
+    });
+
     try {
       const validated = labCheckSchema.parse({
         ...formData,
-        c_percent: Number(formData.c_percent),
-        mn_percent: Number(formData.mn_percent),
-        si_percent: Number(formData.si_percent),
-        s_percent: Number(formData.s_percent),
-        p_percent: Number(formData.p_percent),
-        cr_percent: Number(formData.cr_percent),
-        ni_percent: Number(formData.ni_percent),
-        mo_percent: Number(formData.mo_percent),
-        cu_percent: Number(formData.cu_percent)
+        c_percent: formData.c_percent === "" ? 0 : Number(formData.c_percent),
+        mn_percent: formData.mn_percent === "" ? 0 : Number(formData.mn_percent),
+        si_percent: formData.si_percent === "" ? 0 : Number(formData.si_percent),
+        s_percent: formData.s_percent === "" ? 0 : Number(formData.s_percent),
+        p_percent: formData.p_percent === "" ? 0 : Number(formData.p_percent),
+        cr_percent: formData.cr_percent === "" ? 0 : Number(formData.cr_percent),
+        ni_percent: formData.ni_percent === "" ? 0 : Number(formData.ni_percent),
+        mo_percent: formData.mo_percent === "" ? 0 : Number(formData.mo_percent),
+        cu_percent: formData.cu_percent === "" ? 0 : Number(formData.cu_percent),
+        other_elements: otherObj
       });
       labMutation.mutate(validated);
     } catch (err: any) {
@@ -301,6 +352,19 @@ export default function LabPage() {
               <span><strong className="text-orange-600 font-extrabold">Cr:</strong> {heat.cr_percent}%</span>
               <span><strong className="text-orange-600 font-extrabold">Ni:</strong> {heat.ni_percent}%</span>
             </div>
+            {/* Display custom dynamic chemistry elements */}
+            {heat.other_elements && Object.keys(heat.other_elements).length > 0 && (
+              <div className="flex flex-wrap items-center gap-1 mt-1 pt-1 border-t border-slate-200/60 text-[10px] font-mono">
+                {Object.entries(heat.other_elements).map(([sym, val]: any) => (
+                  <span
+                    key={sym}
+                    className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200 font-bold"
+                  >
+                    {sym}: {val}%
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="text-[10px] text-slate-400 group-hover/chem:text-orange-600 font-semibold mt-1 flex items-center gap-1">
               <FlaskConical className="w-3 h-3 text-orange-500" />
               <span>View Full Chemical Analysis &rarr;</span>
@@ -403,10 +467,11 @@ export default function LabPage() {
     <>
       <Topbar
         pageTitle="Metallurgical Quality Lab & Chemical Analysis"
+        mobileTitle="Lab QA"
         pageSubtitle="Optical emission spectrometry (OES), chemical composition breakdown & casting clearance"
       />
 
-      <main className="p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6 lg:space-y-8 flex-1 font-sans">
+      <main className="p-3 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 lg:space-y-8 flex-1 font-sans">
         {/* Hero Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 font-sans">
           <div className="flex items-start gap-3 sm:gap-4">
@@ -446,8 +511,8 @@ export default function LabPage() {
           </div>
         </div>
 
-        {/* StatCards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+        {/* StatCards - 2 columns on mobile */}
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-4 lg:gap-5">
           <StatCard
             title="TOTAL HEATS TESTED"
             value={pagination?.total ?? heats.length}
@@ -462,13 +527,15 @@ export default function LabPage() {
             icon={CheckCircle2}
             variant="emerald"
           />
-          <StatCard
-            title="PENDING VERDICTS"
-            value={pendingCount}
-            subtitle="Requires spectrometer approval"
-            icon={AlertTriangle}
-            variant="orange"
-          />
+          <div className="col-span-2 sm:col-span-1">
+            <StatCard
+              title="PENDING VERDICTS"
+              value={pendingCount}
+              subtitle="Requires spectrometer approval"
+              icon={AlertTriangle}
+              variant="orange"
+            />
+          </div>
         </div>
 
         {/* Table with Backend Pagination */}
@@ -567,10 +634,10 @@ export default function LabPage() {
                   <FlaskConical className="w-4 h-4 text-orange-600" />
                   <span>Optical Emission Spectrometry (OES) Results</span>
                 </h4>
-                <span className="text-[11px] text-slate-500 font-medium">Standard ASTM A276 / EN 10088-3</span>
+                <span className="text-[11px] text-slate-500 font-medium">Standard </span>
               </div>
 
-              <div className="grid grid-cols-3 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3">
                 {[
                   { name: "Carbon", symbol: "C", val: selectedChemicalAnalysis.c_percent, nominal: "< 0.08%" },
                   { name: "Manganese", symbol: "Mn", val: selectedChemicalAnalysis.mn_percent, nominal: "1.0 - 2.0%" },
@@ -580,9 +647,15 @@ export default function LabPage() {
                   { name: "Chromium", symbol: "Cr", val: selectedChemicalAnalysis.cr_percent, nominal: "18.0 - 20.0%" },
                   { name: "Nickel", symbol: "Ni", val: selectedChemicalAnalysis.ni_percent, nominal: "8.0 - 10.5%" },
                   { name: "Molybdenum", symbol: "Mo", val: selectedChemicalAnalysis.mo_percent, nominal: "< 0.30%" },
-                  { name: "Copper", symbol: "Cu", val: selectedChemicalAnalysis.cu_percent, nominal: "< 0.50%" }
+                  { name: "Copper", symbol: "Cu", val: selectedChemicalAnalysis.cu_percent, nominal: "< 0.50%" },
+                  ...Object.entries(selectedChemicalAnalysis.other_elements || {}).map(([sym, val]) => ({
+                    name: STANDARD_ALLOY_OPTIONS.find((a) => a.symbol.toUpperCase() === sym.toUpperCase())?.name || sym,
+                    symbol: sym,
+                    val,
+                    nominal: "Custom Alloying"
+                  }))
                 ].map((elem) => {
-                  const hasVal = elem.val !== null && elem.val !== undefined;
+                  const hasVal = elem.val !== null && elem.val !== undefined && elem.val !== "";
                   return (
                     <div
                       key={elem.symbol}
@@ -674,17 +747,25 @@ export default function LabPage() {
                       ...prev,
                       heat_id: selected.id || selected._id,
                       test_certificate_no: selected.lab_certificate_no || `TC-${selected.heat_number}`,
-                      c_percent: selected.c_percent ?? prev.c_percent,
-                      mn_percent: selected.mn_percent ?? prev.mn_percent,
-                      si_percent: selected.si_percent ?? prev.si_percent,
-                      s_percent: selected.s_percent ?? prev.s_percent,
-                      p_percent: selected.p_percent ?? prev.p_percent,
-                      cr_percent: selected.cr_percent ?? prev.cr_percent,
-                      ni_percent: selected.ni_percent ?? prev.ni_percent,
-                      mo_percent: selected.mo_percent ?? prev.mo_percent,
-                      cu_percent: selected.cu_percent ?? prev.cu_percent,
+                      c_percent: selected.c_percent !== null && selected.c_percent !== undefined ? selected.c_percent : "",
+                      mn_percent: selected.mn_percent !== null && selected.mn_percent !== undefined ? selected.mn_percent : "",
+                      si_percent: selected.si_percent !== null && selected.si_percent !== undefined ? selected.si_percent : "",
+                      s_percent: selected.s_percent !== null && selected.s_percent !== undefined ? selected.s_percent : "",
+                      p_percent: selected.p_percent !== null && selected.p_percent !== undefined ? selected.p_percent : "",
+                      cr_percent: selected.cr_percent !== null && selected.cr_percent !== undefined ? selected.cr_percent : "",
+                      ni_percent: selected.ni_percent !== null && selected.ni_percent !== undefined ? selected.ni_percent : "",
+                      mo_percent: selected.mo_percent !== null && selected.mo_percent !== undefined ? selected.mo_percent : "",
+                      cu_percent: selected.cu_percent !== null && selected.cu_percent !== undefined ? selected.cu_percent : "",
                       verdict: (selected.lab_verdict || prev.verdict) as any
                     }));
+                    const other = selected.other_elements || selected.chemical_analysis?.other_elements || {};
+                    const loadedCustom: CustomElementItem[] = Object.entries(other).map(([sym, val], idx) => ({
+                      id: `elem-loaded-${idx}-${Date.now()}`,
+                      symbol: sym,
+                      name: STANDARD_ALLOY_OPTIONS.find((o) => o.symbol.toUpperCase() === sym.toUpperCase())?.name || sym,
+                      percent: val !== null && val !== undefined ? String(val) : ""
+                    }));
+                    setCustomElements(loadedCustom);
                   } else {
                     setFormData({ ...formData, heat_id: e.target.value });
                   }
@@ -702,29 +783,27 @@ export default function LabPage() {
           </div>
 
           {/* Chemical Spectrometry Percentages Grid */}
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3.5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                 <FlaskConical className="w-4 h-4 text-orange-600" />
                 <span>Chemical Spectrometry Analysis (%)</span>
               </h4>
-              {/* Quick Preset Buttons */}
-              <div className="flex flex-wrap items-center gap-1">
-                <span className="text-[10px] text-slate-400 font-semibold mr-1">Presets:</span>
-                {Object.keys(GRADE_PRESETS).map((pKey) => (
-                  <button
-                    key={pKey}
-                    type="button"
-                    onClick={() => handleApplyPreset(pKey)}
-                    className="px-2 py-0.5 rounded-md bg-white border border-slate-200 hover:border-orange-300 hover:text-orange-600 text-[10px] font-bold text-slate-600 transition-colors cursor-pointer"
-                  >
-                    {pKey}
-                  </button>
-                ))}
-              </div>
+
+              {/* Clear Form / Reset Values Button */}
+              <button
+                type="button"
+                onClick={handleClearValues}
+                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:text-orange-600 bg-white border border-slate-200 hover:border-orange-300 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                title="Clear all inputs to enter new spectrometer values"
+              >
+                <RotateCcw className="w-3 h-3 text-slate-500" />
+                <span>Clear All Values</span>
+              </button>
             </div>
 
-            <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+            {/* Standard 9 ASTM Base Elements */}
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2.5">
               {[
                 { label: "C %", key: "c_percent" },
                 { label: "Mn %", key: "mn_percent" },
@@ -742,15 +821,128 @@ export default function LabPage() {
                   </label>
                   <input
                     type="number"
-                    step="0.0001"
+                    step="any"
+                    min="0"
+                    placeholder="0.00"
                     value={(formData as any)[elem.key]}
                     onChange={(e) =>
-                      setFormData({ ...formData, [elem.key]: parseFloat(e.target.value) || 0 })
+                      setFormData({
+                        ...formData,
+                        [elem.key]: e.target.value
+                      })
                     }
                     className="w-full px-2 py-1.5 text-xs font-mono font-bold bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:ring-1 focus:ring-orange-500"
                   />
                 </div>
               ))}
+            </div>
+
+            {/* Dynamic Custom Chemistry Options */}
+            <div className="pt-3 border-t border-slate-200/80 space-y-2.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <span className="text-xs font-bold text-slate-800 block">
+                    Additional Alloying & Trace Elements
+                  </span>
+                  <span className="text-[10px] text-slate-500">
+                    Add other spectrometry elements tested (e.g. V, Ti, Al, N, Nb, B, Co, W)
+                  </span>
+                </div>
+
+                {/* Add Element Toolbar */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <select
+                    value={selectedAlloyToAdd}
+                    onChange={(e) => setSelectedAlloyToAdd(e.target.value)}
+                    className="px-2.5 py-1 text-xs bg-white border border-slate-200 rounded-lg font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                  >
+                    {STANDARD_ALLOY_OPTIONS.map((opt) => (
+                      <option key={opt.symbol} value={opt.symbol}>
+                        {opt.symbol === "CUSTOM" ? "+ Custom Element..." : `${opt.symbol} (${opt.name})`}
+                      </option>
+                    ))}
+                  </select>
+
+                  {selectedAlloyToAdd === "CUSTOM" && (
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="text"
+                        placeholder="Sym (e.g. Zr)"
+                        maxLength={3}
+                        value={customSymbolInput}
+                        onChange={(e) => setCustomSymbolInput(e.target.value)}
+                        className="w-16 px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg font-mono font-bold uppercase"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Name (e.g. Zirconium)"
+                        value={customNameInput}
+                        onChange={(e) => setCustomNameInput(e.target.value)}
+                        className="w-24 px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg"
+                      />
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleAddCustomElement}
+                    className="inline-flex items-center gap-1 px-3 py-1 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* List of Added Custom Elements */}
+              {customElements.length > 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                  {customElements.map((elem) => (
+                    <div
+                      key={elem.id}
+                      className="p-2 bg-white rounded-xl border border-amber-200/80 shadow-2xs flex flex-col justify-between gap-1 relative group"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1">
+                          <span className="font-mono font-black text-xs text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded">
+                            {elem.symbol}
+                          </span>
+                          <span
+                            className="text-[10px] font-semibold text-slate-600 truncate max-w-[80px]"
+                            title={elem.name}
+                          >
+                            {elem.name}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveCustomElement(elem.id)}
+                          className="text-slate-400 hover:text-rose-600 p-0.5 rounded transition-colors cursor-pointer"
+                          title={`Remove ${elem.symbol}`}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-1 mt-1">
+                        <input
+                          type="number"
+                          step="any"
+                          placeholder="0.000"
+                          value={elem.percent}
+                          onChange={(e) => handleCustomElementChange(elem.id, e.target.value)}
+                          className="w-full px-2 py-1 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500"
+                        />
+                        <span className="text-xs font-bold text-slate-500">%</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-2.5 rounded-xl border border-dashed border-slate-200 bg-white text-center text-[11px] text-slate-400">
+                  No additional alloying elements added. Select an element above and click <strong>Add</strong> to record trace elements.
+                </div>
+              )}
             </div>
           </div>
 

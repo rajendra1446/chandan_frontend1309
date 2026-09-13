@@ -1,4 +1,5 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://chandan-backend1309.onrender.com/api";
+// const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://chandan-backend1309.onrender.com/api";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || " http://localhost:5000/api";
 
 export class ApiError extends Error {
   statusCode: number;

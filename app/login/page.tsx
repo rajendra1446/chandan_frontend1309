@@ -77,7 +77,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-[#090e1a] text-white select-none">
       {/* Left Brand Panel */}
-      <div className="md:w-1/2 p-8 md:p-16 flex flex-col justify-between relative overflow-hidden bg-gradient-to-br from-[#090e1a] via-[#0d162d] to-[#121f42] border-b md:border-b-0 md:border-r border-slate-800">
+      <div className="md:w-1/2 p-5 sm:p-8 md:p-16 flex flex-col justify-between relative overflow-hidden bg-gradient-to-br from-[#090e1a] via-[#0d162d] to-[#121f42] border-b md:border-b-0 md:border-r border-slate-800">
         {/* Glow orb background effect */}
         <div className="absolute top-0 -left-20 w-96 h-96 bg-orange-600/10 rounded-full blur-3xl pointer-events-none"></div>
         <div className="absolute bottom-0 right-0 w-80 h-80 bg-amber-600/10 rounded-full blur-3xl pointer-events-none"></div>

@@ -23,6 +23,7 @@ import Modal from "../../../components/Modal";
 import { ColumnDef } from "@tanstack/react-table";
 import { api } from "../../../lib/api";
 import { finishedProductSchema } from "../../../lib/schemas";
+import { PLANT_CATEGORIES, formatPlantName } from "../../../lib/plants";
 
 export default function FinishedProductsPage() {
   const queryClient = useQueryClient();
@@ -33,9 +34,10 @@ export default function FinishedProductsPage() {
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
   const [editProductName, setEditProductName] = useState("");
   const [editProductSize, setEditProductSize] = useState("");
-  const [editInputWeightMt, setEditInputWeightMt] = useState<number>(0);
-  const [editFinishedWeightMt, setEditFinishedWeightMt] = useState<number>(0);
-  const [editFinishedPieces, setEditFinishedPieces] = useState<number>(0);
+  const [editMillName, setEditMillName] = useState("");
+  const [editInputWeightMt, setEditInputWeightMt] = useState<string>("");
+  const [editFinishedWeightMt, setEditFinishedWeightMt] = useState<string>("");
+  const [editFinishedPieces, setEditFinishedPieces] = useState<string>("");
   const [editRemarks, setEditRemarks] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
 
@@ -45,20 +47,34 @@ export default function FinishedProductsPage() {
     dispatch_id: "",
     finished_product_name: "",
     finished_size: "",
-    standard_specification: "",
-    input_billet_weight_mt: 0,
-    finished_pieces: 0,
-    finished_weight_mt: 0,
+    standard_specification: "ASTM A276 / EN 10088-3",
+    input_billet_weight_mt: "",
+    finished_pieces: "",
+    finished_weight_mt: "",
     mill_name: "",
     lot_number: "",
-    remarks: ""
+    remarks: "",
+    include_scrap: false,
+    scrap_weight_mt: "",
+    scrap_pieces: "",
+    scrap_rejection_type: "END_CROP_SCRAP",
+    scrap_reason: "Rolling mill crop scrap generated during production",
+    include_return: false,
+    returned_weight_mt: "",
+    returned_pieces: "",
+    returned_to: "Billet Yard Stock",
+    return_reason: "Unused billet material returned to yard stock"
   });
 
-  // Calculate yield dynamically
-  const calculatedYield =
-    formData.input_billet_weight_mt > 0
-      ? Number(((formData.finished_weight_mt / formData.input_billet_weight_mt) * 100).toFixed(2))
-      : 0;
+  // Calculate yield & material consumption delta dynamically
+  const numInput = parseFloat(formData.input_billet_weight_mt) || 0;
+  const numOutput = parseFloat(formData.finished_weight_mt) || 0;
+  const numScrap = formData.include_scrap ? (parseFloat(formData.scrap_weight_mt) || 0) : 0;
+  const numReturn = formData.include_return ? (parseFloat(formData.returned_weight_mt) || 0) : 0;
+  const calculatedYield = numInput > 0 ? Number(((numOutput / numInput) * 100).toFixed(2)) : 0;
+  const consumptionDelta = numInput > numOutput ? Number((numInput - numOutput).toFixed(3)) : 0;
+  const remainingScaleLoss = Math.max(0, Number((numInput - numOutput - numScrap - numReturn).toFixed(3)));
+  const isOverAllocated = (numOutput + numScrap + numReturn) > numInput + 0.001;
 
   // Pagination & Search state for backend pagination
   const [page, setPage] = useState(1);
@@ -109,9 +125,38 @@ export default function FinishedProductsPage() {
     mutationFn: (newProd: any) => api.post("/finished-products", newProd),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["finished-products"] });
+      queryClient.invalidateQueries({ queryKey: ["rejections"] });
+      queryClient.invalidateQueries({ queryKey: ["returns"] });
+      queryClient.invalidateQueries({ queryKey: ["heat-dispatches"] });
+      queryClient.invalidateQueries({ queryKey: ["billet-heats"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-metrics"] });
+      queryClient.invalidateQueries({ queryKey: ["traceability-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["heat-traceability"] });
       setIsModalOpen(false);
       setFormError(null);
+      setFormData({
+        heat_number: "",
+        dispatch_id: "",
+        finished_product_name: "",
+        finished_size: "",
+        standard_specification: "ASTM A276 / EN 10088-3",
+        input_billet_weight_mt: "",
+        finished_pieces: "",
+        finished_weight_mt: "",
+        mill_name: "",
+        lot_number: "",
+        remarks: "",
+        include_scrap: false,
+        scrap_weight_mt: "",
+        scrap_pieces: "",
+        scrap_rejection_type: "END_CROP_SCRAP",
+        scrap_reason: "Rolling mill crop scrap generated during production",
+        include_return: false,
+        returned_weight_mt: "",
+        returned_pieces: "",
+        returned_to: "Billet Yard Stock",
+        return_reason: "Unused billet material returned to yard stock"
+      });
     },
     onError: (err: any) => {
       setFormError(err.message || "Failed to record finished product.");
@@ -122,7 +167,10 @@ export default function FinishedProductsPage() {
     mutationFn: ({ id, data }: { id: string; data: any }) => api.put(`/finished-products/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["finished-products"] });
+      queryClient.invalidateQueries({ queryKey: ["billet-heats"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-metrics"] });
+      queryClient.invalidateQueries({ queryKey: ["traceability-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["heat-traceability"] });
       setEditingProduct(null);
       setEditError(null);
     },
@@ -135,7 +183,10 @@ export default function FinishedProductsPage() {
     mutationFn: (id: string) => api.delete(`/finished-products/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["finished-products"] });
+      queryClient.invalidateQueries({ queryKey: ["billet-heats"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-metrics"] });
+      queryClient.invalidateQueries({ queryKey: ["traceability-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["heat-traceability"] });
     },
     onError: (err: any) => {
       alert(err.message || "Failed to delete product record.");
@@ -146,9 +197,10 @@ export default function FinishedProductsPage() {
     setEditingProduct(prod);
     setEditProductName(prod.finished_product_name || "");
     setEditProductSize(prod.finished_size || "");
-    setEditInputWeightMt(Number(prod.input_billet_weight_mt) || 0);
-    setEditFinishedWeightMt(Number(prod.finished_weight_mt) || 0);
-    setEditFinishedPieces(Number(prod.finished_pieces) || 0);
+    setEditMillName(formatPlantName(prod.mill_name) || "RM10 - New Plant Rolling Mill 10");
+    setEditInputWeightMt(prod.input_billet_weight_mt !== undefined ? String(prod.input_billet_weight_mt) : "");
+    setEditFinishedWeightMt(prod.finished_weight_mt !== undefined ? String(prod.finished_weight_mt) : "");
+    setEditFinishedPieces(prod.finished_pieces !== undefined ? String(prod.finished_pieces) : "");
     setEditRemarks(prod.remarks || "");
     setEditError(null);
   };
@@ -156,12 +208,20 @@ export default function FinishedProductsPage() {
   const handleEditSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProduct) return;
+    const fw = parseFloat(editFinishedWeightMt);
+    if (isNaN(fw) || fw <= 0) {
+      setEditError("Finished product weight must be a positive number greater than 0.");
+      return;
+    }
     editMutation.mutate({
       id: editingProduct.id || editingProduct._id,
       data: {
         finished_product_name: editProductName,
         finished_size: editProductSize,
-        finished_weight_mt: Number(editFinishedWeightMt)
+        mill_name: editMillName,
+        finished_weight_mt: fw,
+        finished_pieces: parseInt(editFinishedPieces, 10) || 0,
+        remarks: editRemarks
       }
     });
   };
@@ -170,13 +230,59 @@ export default function FinishedProductsPage() {
     e.preventDefault();
     setFormError(null);
 
+    const inputWt = parseFloat(formData.input_billet_weight_mt);
+    const finishWt = parseFloat(formData.finished_weight_mt);
+
+    if (isNaN(inputWt) || inputWt <= 0) {
+      setFormError("Input billet weight must be a positive number greater than 0.");
+      return;
+    }
+    if (isNaN(finishWt) || finishWt <= 0) {
+      setFormError("Finished product weight must be a positive number greater than 0.");
+      return;
+    }
+    if (finishWt > inputWt) {
+      setFormError(`Finished output weight (${finishWt} MT) cannot exceed input billet weight (${inputWt} MT).`);
+      return;
+    }
+
+    if (isOverAllocated) {
+      setFormError(
+        `Total allocated outputs (${(finishWt + numScrap + numReturn).toFixed(3)} MT) exceed input billet consumption (${inputWt.toFixed(3)} MT)!`
+      );
+      return;
+    }
+
+    const payload: any = {
+      heat_number: formData.heat_number.trim().toUpperCase(),
+      dispatch_id: formData.dispatch_id || undefined,
+      finished_product_name: formData.finished_product_name.trim(),
+      finished_size: formData.finished_size.trim(),
+      standard_specification: formData.standard_specification || "ASTM A276 / EN 10088-3",
+      input_billet_weight_mt: inputWt,
+      finished_pieces: parseInt(formData.finished_pieces, 10) || 0,
+      finished_weight_mt: finishWt,
+      mill_name: formData.mill_name || "RM10 - New Plant Rolling Mill 10",
+      lot_number: formData.lot_number || undefined,
+      remarks: formData.remarks || undefined
+    };
+
+    if (formData.include_scrap && numScrap > 0) {
+      payload.scrap_weight_mt = numScrap;
+      payload.scrap_pieces = parseInt(formData.scrap_pieces, 10) || 0;
+      payload.scrap_rejection_type = formData.scrap_rejection_type;
+      payload.scrap_reason = formData.scrap_reason;
+    }
+
+    if (formData.include_return && numReturn > 0) {
+      payload.returned_weight_mt = numReturn;
+      payload.returned_pieces = parseInt(formData.returned_pieces, 10) || 1;
+      payload.returned_to = formData.returned_to;
+      payload.return_reason = formData.return_reason;
+    }
+
     try {
-      const validated = finishedProductSchema.parse({
-        ...formData,
-        input_billet_weight_mt: Number(formData.input_billet_weight_mt),
-        finished_pieces: Number(formData.finished_pieces),
-        finished_weight_mt: Number(formData.finished_weight_mt)
-      });
+      const validated = finishedProductSchema.parse(payload);
       createMutation.mutate(validated);
     } catch (err: any) {
       if (err.errors && Array.isArray(err.errors)) {
@@ -224,11 +330,11 @@ export default function FinishedProductsPage() {
     },
     {
       accessorKey: "mill_name",
-      header: "MANUFACTURING UNIT",
+      header: "MILL / PLANT",
       cell: ({ row }) => (
-        <div className="flex items-center gap-1.5 font-medium text-slate-600">
-          <Factory className="w-3.5 h-3.5 text-slate-400" />
-          <span>{row.original.mill_name}</span>
+        <div className="flex items-center gap-1.5 font-medium text-slate-800 text-xs">
+          <Factory className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+          <span className="font-semibold text-xs text-slate-900">{formatPlantName(row.original.mill_name)}</span>
         </div>
       )
     },
@@ -317,10 +423,11 @@ export default function FinishedProductsPage() {
     <>
       <Topbar
         pageTitle="Finished Products Master"
+        mobileTitle="Finished Goods"
         pageSubtitle="Prime rebar, wire rod & rolled steel specifications"
       />
 
-      <main className="p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6 lg:space-y-8 flex-1 font-sans">
+      <main className="p-3 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 lg:space-y-8 flex-1 font-sans">
         {/* Page Hero Banner matching screenshot */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 font-sans">
           <div className="flex items-start gap-3 sm:gap-4">
@@ -445,7 +552,7 @@ export default function FinishedProductsPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
                 Source Heat Number *
@@ -454,7 +561,7 @@ export default function FinishedProductsPage() {
                 required
                 value={formData.heat_number}
                 onChange={(e) => setFormData({ ...formData, heat_number: e.target.value, dispatch_id: "" })}
-                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-medium text-slate-800"
               >
                 <option value="">-- Select Source Heat --</option>
                 {heats.map((h: any) => (
@@ -467,19 +574,23 @@ export default function FinishedProductsPage() {
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Manufacturing Mill *
+                Processing Mill / Plant Unit *
               </label>
               <select
-                required
-                value={formData.mill_name}
+                value={formatPlantName(formData.mill_name)}
                 onChange={(e) => setFormData({ ...formData, mill_name: e.target.value })}
-                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                required
+                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-medium text-slate-800 cursor-pointer"
               >
-                <option value="">-- Select Mill / Unit --</option>
-                {plantsList.map((p: any) => (
-                  <option key={p.id || p.code} value={p.code}>
-                    {p.code} - {p.name}
-                  </option>
+                <option value="">-- Select Plant Unit (7 Units Only) --</option>
+                {PLANT_CATEGORIES.map((cat) => (
+                  <optgroup key={cat.category} label={`── ${cat.categoryLabel} ──`}>
+                    {cat.plants.map((p) => (
+                      <option key={p.code} value={p.label}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </div>
@@ -488,7 +599,7 @@ export default function FinishedProductsPage() {
           {heatDispatches.length > 0 && (
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Linked Plant Transfer / Dispatch Manifest
+                Linked Plant Transfer / Dispatch Manifest (Optional)
               </label>
               <select
                 value={formData.dispatch_id}
@@ -498,26 +609,26 @@ export default function FinishedProductsPage() {
                   setFormData({
                     ...formData,
                     dispatch_id: dId,
-                    mill_name: found?.target_plant || formData.mill_name,
-                    input_billet_weight_mt: found?.dispatched_weight_mt || formData.input_billet_weight_mt
+                    mill_name: found ? formatPlantName(found.target_plant) : formData.mill_name,
+                    input_billet_weight_mt: found?.dispatched_weight_mt ? String(found.dispatched_weight_mt) : formData.input_billet_weight_mt
                   });
                 }}
-                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-sans"
               >
-                <option value="">-- Select Dispatched Transfer Manifest (Optional) --</option>
+                <option value="">-- Optional: Link to Specific Dispatch Manifest --</option>
                 {heatDispatches.map((d: any) => (
                   <option key={d.id || d._id} value={d.id || d._id}>
-                    {d.dispatch_number} → {d.target_plant} ({d.dispatched_pieces} pcs / {d.dispatched_weight_mt} MT)
+                    {d.dispatch_number} → {formatPlantName(d.target_plant)} ({d.dispatched_pieces} pcs / {d.dispatched_weight_mt} MT)
                   </option>
                 ))}
               </select>
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Product Specification & Name
+                Product Specification & Name *
               </label>
               <input
                 type="text"
@@ -525,13 +636,13 @@ export default function FinishedProductsPage() {
                 value={formData.finished_product_name}
                 onChange={(e) => setFormData({ ...formData, finished_product_name: e.target.value })}
                 placeholder="e.g. SS 304 Wire Rod in Coils"
-                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-medium text-slate-800"
               />
             </div>
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Finished Size / Profile
+                Finished Size / Profile *
               </label>
               <input
                 type="text"
@@ -539,41 +650,45 @@ export default function FinishedProductsPage() {
                 value={formData.finished_size}
                 onChange={(e) => setFormData({ ...formData, finished_size: e.target.value })}
                 placeholder="e.g. 5.5 mm"
-                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-medium text-slate-800"
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Input Billet MT
+                Input Billet MT (Consumption) *
               </label>
               <input
                 type="number"
-                step="0.001"
+                step="any"
+                min="0"
                 required
                 value={formData.input_billet_weight_mt}
                 onChange={(e) =>
-                  setFormData({ ...formData, input_billet_weight_mt: parseFloat(e.target.value) || 0 })
+                  setFormData({ ...formData, input_billet_weight_mt: e.target.value })
                 }
-                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                placeholder="e.g. 0.061"
+                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-bold text-slate-900"
               />
             </div>
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Finished Output MT
+                Finished Output MT (Prime) *
               </label>
               <input
                 type="number"
-                step="0.001"
+                step="any"
+                min="0"
                 required
                 value={formData.finished_weight_mt}
                 onChange={(e) =>
-                  setFormData({ ...formData, finished_weight_mt: parseFloat(e.target.value) || 0 })
+                  setFormData({ ...formData, finished_weight_mt: e.target.value })
                 }
-                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                placeholder="e.g. 0.050"
+                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-bold text-slate-900"
               />
             </div>
 
@@ -588,17 +703,212 @@ export default function FinishedProductsPage() {
             </div>
           </div>
 
+          {/* MATERIAL CONSUMPTION & RECONCILIATION CARD (WHEN OUTPUT IS LESS THAN INPUT) */}
+          {consumptionDelta > 0.0001 && (
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50/90 via-orange-50/70 to-amber-50/90 border border-amber-200/90 shadow-xs space-y-3 font-sans">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span className="text-xs font-bold text-amber-900 uppercase tracking-wide">
+                    Material Allocation: Output is Less Than Consumption
+                  </span>
+                </div>
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-amber-200/80 text-amber-900 border border-amber-300">
+                  Δ {consumptionDelta.toFixed(3)} MT to account
+                </span>
+              </div>
+
+              <p className="text-[11px] text-amber-800 leading-relaxed">
+                Input billet material (<strong>{numInput.toFixed(3)} MT</strong>) exceeds prime finished output (<strong>{numOutput.toFixed(3)} MT</strong>) by <strong>{consumptionDelta.toFixed(3)} MT</strong>. You can add scrap loss and/or return unused billets below:
+              </p>
+
+              {/* Option 1: Add Scrap */}
+              <div className="p-3 bg-white/90 rounded-xl border border-amber-200/80 space-y-2">
+                <label className="flex items-center gap-2 text-xs font-bold text-slate-800 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={formData.include_scrap}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setFormData({
+                        ...formData,
+                        include_scrap: checked,
+                        scrap_weight_mt: checked && !formData.scrap_weight_mt ? String(Number((consumptionDelta - numReturn).toFixed(3)) > 0 ? (consumptionDelta - numReturn).toFixed(3) : "") : formData.scrap_weight_mt
+                      });
+                    }}
+                    className="w-4 h-4 text-orange-600 rounded border-slate-300 focus:ring-orange-500 cursor-pointer"
+                  />
+                  <span>Add Rejection Scrap (Send to SMS Furnace Remelt)</span>
+                </label>
+
+                {formData.include_scrap && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Scrap Weight (MT) *
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={formData.scrap_weight_mt}
+                        onChange={(e) => setFormData({ ...formData, scrap_weight_mt: e.target.value })}
+                        placeholder="e.g. 0.005"
+                        className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-bold text-rose-700 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Defect / Scrap Type
+                      </label>
+                      <select
+                        value={formData.scrap_rejection_type}
+                        onChange={(e) => setFormData({ ...formData, scrap_rejection_type: e.target.value })}
+                        className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-medium text-slate-800"
+                      >
+                        <option value="END_CROP_SCRAP">End Crop Scrap (Head / Tail)</option>
+                        <option value="COBBLE_SCRAP">Mill Cobble Scrap</option>
+                        <option value="SURFACE_CRACKS">Surface Cracks / Seams</option>
+                        <option value="SECTION_DEFECT">Section Size Distortion</option>
+                        <option value="INTERNAL_POROSITY">Internal Porosity / Pipe</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Scrap Pieces
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={formData.scrap_pieces}
+                        onChange={(e) => setFormData({ ...formData, scrap_pieces: e.target.value })}
+                        placeholder="0 pcs"
+                        className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Option 2: Include Return Material */}
+              <div className="p-3 bg-white/90 rounded-xl border border-amber-200/80 space-y-2">
+                <label className="flex items-center gap-2 text-xs font-bold text-slate-800 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={formData.include_return}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setFormData({
+                        ...formData,
+                        include_return: checked,
+                        returned_weight_mt: checked && !formData.returned_weight_mt ? String(Number((consumptionDelta - numScrap).toFixed(3)) > 0 ? (consumptionDelta - numScrap).toFixed(3) : "") : formData.returned_weight_mt
+                      });
+                    }}
+                    className="w-4 h-4 text-orange-600 rounded border-slate-300 focus:ring-orange-500 cursor-pointer"
+                  />
+                  <span>Include Return Material (Unused Billets back to Yard Stock)</span>
+                </label>
+
+                {formData.include_return && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Return Weight (MT) *
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={formData.returned_weight_mt}
+                        onChange={(e) => setFormData({ ...formData, returned_weight_mt: e.target.value })}
+                        placeholder="e.g. 0.010"
+                        className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-bold text-amber-700 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Receiving Yard / Unit
+                      </label>
+                      <select
+                        value={formData.returned_to}
+                        onChange={(e) => setFormData({ ...formData, returned_to: e.target.value })}
+                        className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-medium text-slate-800"
+                      >
+                        <option value="Billet Yard Stock">Billet Yard Stock (SMS Central)</option>
+                        <option value="SMS Induction / Arc Furnace (Remelt Bay)">SMS Furnace Remelt Bay</option>
+                        <option value="SMS Quality Hold Yard">SMS Quality Hold Yard</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Returned Pieces
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={formData.returned_pieces}
+                        onChange={(e) => setFormData({ ...formData, returned_pieces: e.target.value })}
+                        placeholder="1 pcs"
+                        className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Live Balance Summary */}
+              <div className="p-3 bg-white/95 rounded-xl border border-amber-200/90 text-xs font-mono">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                  <div>
+                    <span className="text-[10px] text-slate-500 block">Input Consumed:</span>
+                    <span className="font-bold text-slate-900">{numInput.toFixed(3)} MT</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 block">Prime Output:</span>
+                    <span className="font-bold text-emerald-700">{numOutput.toFixed(3)} MT</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 block">Scrap + Return:</span>
+                    <span className="font-bold text-amber-700">{(numScrap + numReturn).toFixed(3)} MT</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 block">Scale Loss / Balance:</span>
+                    <span className={`font-black ${isOverAllocated ? "text-rose-600" : "text-slate-900"}`}>
+                      {remainingScaleLoss.toFixed(3)} MT
+                    </span>
+                  </div>
+                </div>
+
+                {isOverAllocated ? (
+                  <p className="mt-2 text-[11px] text-rose-700 font-sans font-bold">
+                    ⚠️ Total allocated outputs ({(numOutput + numScrap + numReturn).toFixed(3)} MT) exceed input billet consumption ({numInput.toFixed(3)} MT)!
+                  </p>
+                ) : (
+                  <p className="mt-2 text-[11px] text-emerald-800 font-sans font-medium">
+                    ✓ Material accounted for: Prime ({numOutput.toFixed(3)} MT) + Scrap ({numScrap.toFixed(3)} MT) + Return ({numReturn.toFixed(3)} MT) + Burning Loss ({remainingScaleLoss.toFixed(3)} MT) = {numInput.toFixed(3)} MT.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
               Finished Pieces (Bundles / Coils)
             </label>
             <input
               type="number"
+              min="0"
               value={formData.finished_pieces}
               onChange={(e) =>
-                setFormData({ ...formData, finished_pieces: parseInt(e.target.value, 10) || 0 })
+                setFormData({ ...formData, finished_pieces: e.target.value })
               }
-              className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+              placeholder="e.g. 24 bundles"
+              className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-medium text-slate-800"
             />
           </div>
 
@@ -612,7 +922,7 @@ export default function FinishedProductsPage() {
             </button>
             <button
               type="submit"
-              disabled={createMutation.isPending}
+              disabled={createMutation.isPending || isOverAllocated}
               className="px-5 py-2 text-xs font-bold text-white bg-orange-500 hover:bg-orange-600 rounded-xl shadow-md shadow-orange-500/20 transition-all cursor-pointer disabled:opacity-50"
             >
               {createMutation.isPending ? "Recording Product..." : "Save Finished Product"}
@@ -651,7 +961,30 @@ export default function FinishedProductsPage() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Processing Mill / Plant Unit *
+              </label>
+              <select
+                value={formatPlantName(editMillName)}
+                onChange={(e) => setEditMillName(e.target.value)}
+                required
+                className="w-full px-3 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-medium text-slate-800 font-sans cursor-pointer"
+              >
+                <option value="">-- Select Plant Unit (7 Units Only) --</option>
+                {PLANT_CATEGORIES.map((cat) => (
+                  <optgroup key={cat.category} label={`── ${cat.categoryLabel} ──`}>
+                    {cat.plants.map((p) => (
+                      <option key={p.code} value={p.label}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
                   Finished Size *
@@ -672,11 +1005,11 @@ export default function FinishedProductsPage() {
                 </label>
                 <input
                   type="number"
-                  step="0.001"
-                  min="0.001"
+                  step="any"
+                  min="0"
                   required
                   value={editFinishedWeightMt}
-                  onChange={(e) => setEditFinishedWeightMt(parseFloat(e.target.value) || 0)}
+                  onChange={(e) => setEditFinishedWeightMt(e.target.value)}
                   className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-bold text-slate-900"
                 />
               </div>

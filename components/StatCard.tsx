@@ -38,27 +38,27 @@ export default function StatCard({
   const displayTitle = title || label || "";
   const displaySubtitle = subtitle || subtext;
   return (
-    <div className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-5 lg:p-6 shadow-xs flex flex-col justify-between transition-all hover:shadow-md hover:border-slate-300 font-sans">
-      <div className="flex items-start justify-between gap-2">
-        <span className="text-[11px] sm:text-xs font-bold tracking-wider text-slate-500 uppercase font-sans">
+    <div className="bg-white rounded-2xl border border-slate-200/80 p-3 sm:p-5 lg:p-6 shadow-xs flex flex-col justify-between transition-all hover:shadow-md hover:border-slate-300 font-sans">
+      <div className="flex items-start justify-between gap-1.5">
+        <span className="text-[10px] sm:text-xs font-bold tracking-wider text-slate-500 uppercase font-sans line-clamp-1">
           {displayTitle}
         </span>
         <div
           className={clsx(
-            "p-2 sm:p-2.5 rounded-xl border shrink-0",
+            "p-1.5 sm:p-2.5 rounded-xl border shrink-0",
             iconBg && iconColor ? `${iconBg} ${iconColor} border-transparent` : variantStyles[variant]
           )}
         >
-          <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
+          <Icon className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
         </div>
       </div>
 
-      <div className="mt-3 sm:mt-4">
-        <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight font-sans">
+      <div className="mt-2 sm:mt-4">
+        <div className="text-xl sm:text-3xl font-extrabold text-slate-900 tracking-tight font-sans">
           {value}
         </div>
         {displaySubtitle && (
-          <p className="mt-1 text-[11px] sm:text-xs font-medium text-slate-500 truncate font-sans">
+          <p className="mt-0.5 sm:mt-1 text-[10px] sm:text-xs font-medium text-slate-500 truncate font-sans">
             {displaySubtitle}
           </p>
         )}

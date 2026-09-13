@@ -135,12 +135,13 @@ export default function DashboardPage() {
     <>
       <Topbar
         pageTitle="MES Operations Dashboard"
+        mobileTitle="MES Overview"
         pageSubtitle="Real-time casting, spectrometry testing, mill transfers & material balance ledger"
       />
 
-      <main className="p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8 flex-1 font-sans">
-        {/* KPI Stat Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+      <main className="p-3 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 lg:space-y-8 flex-1 font-sans">
+        {/* KPI Stat Cards - 2x2 on mobile, 4 on desktop */}
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4 lg:gap-5">
           <StatCard
             title="TOTAL CAST HEATS"
             value={metrics?.heats?.total_heats || (isMetricsLoading ? "..." : "0")}
@@ -172,13 +173,13 @@ export default function DashboardPage() {
         </div>
 
         {/* Quick Actions Hero Banner */}
-        <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 rounded-2xl sm:rounded-3xl p-5 sm:p-6 text-white shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-5 sm:gap-6 border border-slate-700/60 font-sans">
+        <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 rounded-2xl sm:rounded-3xl p-4 sm:p-6 text-white shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 sm:gap-6 border border-slate-700/60 font-sans">
           <div className="space-y-1.5 text-left">
             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-orange-500/20 border border-orange-500/40 text-orange-400 text-[11px] font-bold">
               <Factory className="w-3.5 h-3.5" />
               <span>Chandan Steel Core MES Workflow</span>
             </div>
-            <h3 className="text-lg sm:text-xl font-black tracking-tight font-sans">
+            <h3 className="text-base sm:text-xl font-black tracking-tight font-sans">
               Primary Billet Casting & Multi-Length Transfers
             </h3>
             <p className="text-xs text-slate-300 max-w-xl font-sans leading-relaxed">
@@ -186,17 +187,17 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
             <Link
               href="/dashboard/billets"
-              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white text-xs font-bold shadow-md shadow-orange-500/25 flex items-center gap-2 transition-all cursor-pointer"
+              className="flex-1 sm:flex-none justify-center px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white text-xs font-bold shadow-md shadow-orange-500/25 flex items-center gap-2 transition-all cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Cast New Heat</span>
             </Link>
             <Link
               href="/dashboard/dispatches"
-              className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold border border-slate-600 flex items-center gap-2 transition-all cursor-pointer"
+              className="flex-1 sm:flex-none justify-center px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold border border-slate-600 flex items-center gap-2 transition-all cursor-pointer"
             >
               <ArrowLeftRight className="w-4 h-4" />
               <span>Transfer to Mill</span>

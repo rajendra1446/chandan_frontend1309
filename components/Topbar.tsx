@@ -21,18 +21,28 @@ import { useSidebar } from "../lib/sidebarContext";
 
 interface TopbarProps {
   pageTitle: string;
+  mobileTitle?: string;
   pageSubtitle?: string;
   subtitle?: string;
 }
 
 export default function Topbar({
   pageTitle,
+  mobileTitle,
   pageSubtitle,
   subtitle
 }: TopbarProps) {
   const { user, logout } = useAuth();
-  const { toggleMobile } = useSidebar();
+  const { toggleMobile, toggleCollapse, isCollapsed } = useSidebar();
   const displaySubtitle = pageSubtitle || subtitle;
+
+  const handleToggleSidebar = () => {
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      toggleMobile();
+    } else {
+      toggleCollapse();
+    }
+  };
 
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -64,14 +74,15 @@ export default function Topbar({
   return (
     <>
       {/* Sticky Fixed Header */}
-      <header className="sticky top-0 z-30 h-16 sm:h-20 bg-white/95 backdrop-blur-md border-b border-slate-200/90 px-4 sm:px-6 lg:px-8 flex items-center justify-between shrink-0 font-sans shadow-xs transition-all">
+      <header className="sticky top-0 z-30 h-16 sm:h-20 bg-white/95 backdrop-blur-md border-b border-slate-200/90 px-3 sm:px-6 lg:px-8 flex items-center justify-between shrink-0 font-sans shadow-xs transition-all w-full">
         {/* Left: Mobile Toggle & Professional Page Title */}
-        <div className="flex items-center gap-3.5 min-w-0">
-          {/* Mobile Menu Hamburger */}
+        <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+          {/* Sidebar Toggle Button (Desktop & Mobile) */}
           <button
-            onClick={toggleMobile}
-            className="lg:hidden p-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors cursor-pointer"
-            aria-label="Open navigation menu"
+            onClick={handleToggleSidebar}
+            className="p-2 sm:p-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors cursor-pointer shrink-0"
+            title={isCollapsed ? "Show Navigation Sidebar" : "Hide Navigation Sidebar (Full Page Mode)"}
+            aria-label="Toggle navigation menu"
           >
             <Menu className="w-5 h-5" />
           </button>
@@ -83,8 +94,9 @@ export default function Topbar({
           </div>
 
           <div className="min-w-0">
-            <h1 className="text-base sm:text-lg lg:text-xl font-extrabold text-slate-900 tracking-tight leading-tight truncate font-sans">
-              {pageTitle}
+            <h1 className="text-sm sm:text-lg lg:text-xl font-extrabold text-slate-900 tracking-tight leading-tight truncate font-sans">
+              <span className="sm:hidden">{mobileTitle || pageTitle}</span>
+              <span className="hidden sm:inline">{pageTitle}</span>
             </h1>
             {displaySubtitle && (
               <p className="hidden sm:block text-xs sm:text-sm text-slate-500 font-medium truncate mt-0.5 font-sans">
@@ -95,12 +107,12 @@ export default function Topbar({
         </div>
 
         {/* Right: Notifications & Interactive Profile */}
-        <div className="flex items-center gap-2.5 sm:gap-4 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
           {/* Notifications Dropdown Container */}
           <div className="relative" ref={notificationRef}>
             <button
               onClick={() => setIsNotificationOpen(!isNotificationOpen)}
-              className="relative p-2.5 rounded-xl border border-slate-200/90 hover:bg-slate-100/80 text-slate-700 hover:text-slate-900 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+              className="relative p-2 sm:p-2.5 rounded-xl border border-slate-200/90 hover:bg-slate-100/80 text-slate-700 hover:text-slate-900 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-500/20"
               title="System Notifications"
               aria-label="System Notifications"
             >
@@ -109,7 +121,7 @@ export default function Topbar({
             </button>
 
             {isNotificationOpen && (
-              <div className="absolute right-0 mt-2 w-80 sm:w-88 bg-white rounded-2xl border border-slate-200 shadow-xl p-4 z-50 animate-in fade-in slide-in-from-top-2 duration-150 font-sans">
+              <div className="absolute right-0 mt-2 w-[calc(100vw-1.5rem)] max-w-sm sm:w-88 bg-white rounded-2xl border border-slate-200 shadow-xl p-4 z-50 animate-in fade-in slide-in-from-top-2 duration-150 font-sans">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                   <div className="flex items-center gap-2">
                     <Bell className="w-4 h-4 text-orange-600" />
@@ -169,7 +181,7 @@ export default function Topbar({
 
             {/* Profile Menu Dropdown */}
             {isProfileMenuOpen && (
-              <div className="absolute right-0 mt-2 w-72 sm:w-80 bg-white rounded-2xl border border-slate-200 shadow-2xl p-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150 font-sans">
+              <div className="absolute right-0 mt-2 w-[calc(100vw-1.5rem)] max-w-xs sm:w-80 bg-white rounded-2xl border border-slate-200 shadow-2xl p-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150 font-sans">
                 {/* User Summary Header */}
                 <div className="p-3.5 rounded-xl bg-gradient-to-br from-slate-900 to-slate-800 text-white mb-2 shadow-sm">
                   <div className="flex items-center gap-3">

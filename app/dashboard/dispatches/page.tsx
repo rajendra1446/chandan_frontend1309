@@ -26,6 +26,7 @@ import Modal from "../../../components/Modal";
 import { ColumnDef } from "@tanstack/react-table";
 import { api } from "../../../lib/api";
 import { dispatchSchema } from "../../../lib/schemas";
+import { PLANT_CATEGORIES, formatPlantName } from "../../../lib/plants";
 
 export default function DispatchesPage() {
   const queryClient = useQueryClient();
@@ -42,17 +43,17 @@ export default function DispatchesPage() {
   // Edit State
   const [editingDispatch, setEditingDispatch] = useState<any | null>(null);
   const [editTargetPlant, setEditTargetPlant] = useState("");
-  const [editDispatchedPieces, setEditDispatchedPieces] = useState<number>(0);
-  const [editDispatchedWeightMt, setEditDispatchedWeightMt] = useState<number>(0);
+  const [editDispatchedPieces, setEditDispatchedPieces] = useState<string>("0");
+  const [editDispatchedWeightMt, setEditDispatchedWeightMt] = useState<string>("0");
   const [editStatus, setEditStatus] = useState("DISPATCHED");
   const [editRemarks, setEditRemarks] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
 
   // Length breakdown lines for dispatch
   const [breakdown, setBreakdown] = useState<Array<{
-    length_meters: number;
-    pieces: number;
-    weight_mt: number;
+    length_meters: number | string;
+    pieces: number | string;
+    weight_mt: number | string;
   }>>([]);
 
   // Pagination & Search state for backend pagination
@@ -124,6 +125,8 @@ export default function DispatchesPage() {
       queryClient.invalidateQueries({ queryKey: ["dispatches"] });
       queryClient.invalidateQueries({ queryKey: ["billet-heats"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-metrics"] });
+      queryClient.invalidateQueries({ queryKey: ["traceability-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["heat-traceability"] });
       setIsCreateOpen(false);
       setFormError(null);
       setHeatNumber("");
@@ -142,6 +145,8 @@ export default function DispatchesPage() {
       queryClient.invalidateQueries({ queryKey: ["dispatches"] });
       queryClient.invalidateQueries({ queryKey: ["billet-heats"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-metrics"] });
+      queryClient.invalidateQueries({ queryKey: ["traceability-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["heat-traceability"] });
       setSelectedDispatch(null);
     }
   });
@@ -152,6 +157,8 @@ export default function DispatchesPage() {
       queryClient.invalidateQueries({ queryKey: ["dispatches"] });
       queryClient.invalidateQueries({ queryKey: ["billet-heats"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-metrics"] });
+      queryClient.invalidateQueries({ queryKey: ["traceability-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["heat-traceability"] });
       setEditingDispatch(null);
       setEditError(null);
     },
@@ -162,9 +169,9 @@ export default function DispatchesPage() {
 
   const handleOpenEdit = (dispatch: any) => {
     setEditingDispatch(dispatch);
-    setEditTargetPlant(dispatch.target_plant || "Rolling Mill #1");
-    setEditDispatchedPieces(Number(dispatch.dispatched_pieces) || 0);
-    setEditDispatchedWeightMt(Number(dispatch.dispatched_weight_mt) || 0);
+    setEditTargetPlant(formatPlantName(dispatch.target_plant) || "RM10 - New Plant Rolling Mill 10");
+    setEditDispatchedPieces(String(dispatch.dispatched_pieces ?? 0));
+    setEditDispatchedWeightMt(String(dispatch.dispatched_weight_mt ?? 0));
     setEditStatus(dispatch.status || "DISPATCHED");
     setEditRemarks(dispatch.remarks || "");
     setEditError(null);
@@ -177,8 +184,8 @@ export default function DispatchesPage() {
       id: editingDispatch.id || editingDispatch._id,
       data: {
         target_plant: editTargetPlant,
-        dispatched_pieces: Number(editDispatchedPieces),
-        dispatched_weight_mt: Number(editDispatchedWeightMt),
+        dispatched_pieces: Number(editDispatchedPieces) || 0,
+        dispatched_weight_mt: Number(editDispatchedWeightMt) || 0,
         status: editStatus,
         remarks: editRemarks
       }
@@ -189,12 +196,12 @@ export default function DispatchesPage() {
   const totalDispatchesCount = pagination?.total ?? dispatches.length;
   const totalWeightDispatched = dispatches
     .reduce((acc: number, d: any) => acc + (Number(d.dispatched_weight_mt) || 0), 0)
-    .toFixed(2);
+    .toFixed(3);
   const totalPiecesDispatched = dispatches.reduce(
     (acc: number, d: any) => acc + (Number(d.dispatched_pieces) || 0),
     0
   );
-  const uniquePlants = Array.from(new Set(dispatches.map((d: any) => d.target_plant))).length;
+  const uniquePlants = Array.from(new Set(dispatches.map((d: any) => formatPlantName(d.target_plant)))).length;
 
   // Handle Form Submit
   const handleSubmit = (e: React.FormEvent) => {
@@ -216,7 +223,11 @@ export default function DispatchesPage() {
       target_plant: targetPlant,
       dispatched_pieces: totalDispatchedPieces,
       dispatched_weight_mt: totalDispatchedWeightMt,
-      lengths_breakdown: breakdown,
+      lengths_breakdown: breakdown.map((b) => ({
+        length_meters: Number(b.length_meters) || 0,
+        pieces: Number(b.pieces) || 0,
+        weight_mt: Number(b.weight_mt) || 0
+      })),
       override_lab_check: overrideLabCheck,
       remarks: remarks || undefined
     };
@@ -237,16 +248,18 @@ export default function DispatchesPage() {
     setBreakdown(breakdown.filter((_, i) => i !== index));
   };
 
-  const handleBreakdownChange = (index: number, field: string, val: number) => {
+  const handleBreakdownChange = (index: number, field: string, val: string | number) => {
     const updated = [...breakdown];
     (updated[index] as any)[field] = val;
 
     // Auto-recalculate MT if length or pieces change (default cross-section ~113.04 kg/m)
     if (field === "length_meters" || field === "pieces") {
-      const len = field === "length_meters" ? val : updated[index].length_meters;
-      const pcs = field === "pieces" ? val : updated[index].pieces;
-      const autoMt = Number(((len * 113.04 * pcs) / 1000).toFixed(3));
-      updated[index].weight_mt = autoMt;
+      const len = Number(field === "length_meters" ? val : updated[index].length_meters) || 0;
+      const pcs = Number(field === "pieces" ? val : updated[index].pieces) || 0;
+      if (len > 0 && pcs > 0) {
+        const autoMt = Number(((len * 113.04 * pcs) / 1000).toFixed(4));
+        updated[index].weight_mt = autoMt;
+      }
     }
 
     setBreakdown(updated);
@@ -277,8 +290,8 @@ export default function DispatchesPage() {
       header: "Target Plant",
       cell: ({ row }) => (
         <div className="flex items-center gap-1.5 font-medium text-slate-800">
-          <Factory className="w-3.5 h-3.5 text-slate-400" />
-          <span>{row.getValue("target_plant")}</span>
+          <Factory className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+          <span className="font-semibold text-xs text-slate-900">{formatPlantName(row.getValue("target_plant"))}</span>
         </div>
       )
     },
@@ -388,10 +401,11 @@ export default function DispatchesPage() {
     <>
       <Topbar
         pageTitle="Plant Transfers & Mill Dispatches"
-        subtitle="Manage billet shipments from casting yard to rolling mills and processing units with cut-length deductions."
+        mobileTitle="Unit Transfers"
+        pageSubtitle="Manage billet shipments from casting yard to rolling mills and processing units with cut-length deductions."
       />
 
-      <main className="p-4 sm:p-6 lg:p-8 space-y-6 flex-1 font-sans">
+      <main className="p-3 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 flex-1 font-sans">
         {/* Action Header with unified brand matching */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 font-sans">
           <div className="flex items-start gap-3 sm:gap-4">
@@ -436,8 +450,8 @@ export default function DispatchesPage() {
           </div>
         </div>
 
-        {/* KPI Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* KPI Cards - 2x2 on mobile, 4 on desktop */}
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
           <StatCard
             label="Total Mill Shipments"
             value={totalDispatchesCount}
@@ -537,20 +551,24 @@ export default function DispatchesPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5 font-sans">
                   Target Plant / Mill *
                 </label>
                 <select
                   value={targetPlant}
                   onChange={(e) => setTargetPlant(e.target.value)}
                   required
-                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-medium text-slate-800 font-sans"
+                  className="w-full px-3 py-2.5 text-xs bg-slate-50 border border-slate-200/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-medium text-slate-800 font-sans cursor-pointer"
                 >
-                  <option value="">-- Select Target Plant / Mill --</option>
-                  {plantsList.map((p: any) => (
-                    <option key={p.id || p.code} value={p.code}>
-                      {p.code} - {p.name}
-                    </option>
+                  <option value="">-- Select Target Plant / Mill (7 Units Only) --</option>
+                  {PLANT_CATEGORIES.map((cat) => (
+                    <optgroup key={cat.category} label={`── ${cat.categoryLabel} ──`}>
+                      {cat.plants.map((p) => (
+                        <option key={p.code} value={p.label}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
               </div>
@@ -594,55 +612,57 @@ export default function DispatchesPage() {
                 {breakdown.map((row, idx) => (
                   <div
                     key={idx}
-                    className="grid grid-cols-12 gap-2 items-center bg-white p-2.5 rounded-xl border border-slate-200/80 shadow-xs"
+                    className="grid grid-cols-2 sm:grid-cols-12 gap-2.5 items-end sm:items-center bg-white p-2.5 rounded-xl border border-slate-200/80 shadow-xs"
                   >
-                    <div className="col-span-4">
+                    <div className="col-span-1 sm:col-span-4">
                       <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">
                         Cut Length (M)
                       </label>
                       <input
                         type="number"
-                        step="0.1"
-                        min="0.5"
+                        step="any"
+                        min="0"
                         value={row.length_meters}
                         onChange={(e) =>
-                          handleBreakdownChange(idx, "length_meters", parseFloat(e.target.value) || 0)
+                          handleBreakdownChange(idx, "length_meters", e.target.value)
                         }
                         className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-lg font-semibold text-slate-800 focus:ring-1 focus:ring-orange-500"
                       />
                     </div>
 
-                    <div className="col-span-3">
+                    <div className="col-span-1 sm:col-span-3">
                       <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">
                         Pieces
                       </label>
                       <input
                         type="number"
                         min="1"
+                        step="1"
                         value={row.pieces}
                         onChange={(e) =>
-                          handleBreakdownChange(idx, "pieces", parseInt(e.target.value, 10) || 0)
+                          handleBreakdownChange(idx, "pieces", e.target.value)
                         }
                         className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-lg font-semibold text-slate-800 focus:ring-1 focus:ring-orange-500"
                       />
                     </div>
 
-                    <div className="col-span-4">
+                    <div className="col-span-1 sm:col-span-4">
                       <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">
                         Weight (MT)
                       </label>
                       <input
                         type="number"
-                        step="0.001"
+                        step="any"
+                        min="0"
                         value={row.weight_mt}
                         onChange={(e) =>
-                          handleBreakdownChange(idx, "weight_mt", parseFloat(e.target.value) || 0)
+                          handleBreakdownChange(idx, "weight_mt", e.target.value)
                         }
                         className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-lg font-bold text-slate-900 bg-slate-50 focus:ring-1 focus:ring-orange-500"
                       />
                     </div>
 
-                    <div className="col-span-1 flex justify-center pt-3">
+                    <div className="col-span-1 sm:col-span-1 flex justify-end sm:justify-center pt-1 sm:pt-3">
                       <button
                         type="button"
                         onClick={() => handleRemoveBreakdownRow(idx)}
@@ -724,7 +744,7 @@ export default function DispatchesPage() {
             size="md"
           >
             <div className="space-y-4 font-sans">
-              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 text-xs">
                 <div>
                   <span className="text-slate-500 block text-[11px]">Heat Number:</span>
                   <span className="font-bold text-slate-900 font-mono text-sm">
@@ -733,7 +753,7 @@ export default function DispatchesPage() {
                 </div>
                 <div>
                   <span className="text-slate-500 block text-[11px]">Destination Plant:</span>
-                  <span className="font-bold text-slate-900">{selectedDispatch.target_plant}</span>
+                  <span className="font-bold text-slate-900">{formatPlantName(selectedDispatch.target_plant)}</span>
                 </div>
                 <div>
                   <span className="text-slate-500 block text-[11px]">Pieces Sent:</span>
@@ -859,16 +879,20 @@ export default function DispatchesPage() {
                   Target Plant / Mill *
                 </label>
                 <select
-                  value={editTargetPlant}
+                  value={formatPlantName(editTargetPlant)}
                   onChange={(e) => setEditTargetPlant(e.target.value)}
                   required
-                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-medium text-slate-800 font-sans"
+                  className="w-full px-3 py-2.5 text-xs bg-slate-50 border border-slate-200/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-medium text-slate-800 font-sans cursor-pointer"
                 >
-                  <option value="">-- Select Target Plant / Mill --</option>
-                  {plantsList.map((p: any) => (
-                    <option key={p.id || p.code} value={p.code}>
-                      {p.code} - {p.name}
-                    </option>
+                  <option value="">-- Select Target Plant / Mill (7 Units Only) --</option>
+                  {PLANT_CATEGORIES.map((cat) => (
+                    <optgroup key={cat.category} label={`── ${cat.categoryLabel} ──`}>
+                      {cat.plants.map((p) => (
+                        <option key={p.code} value={p.label}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
               </div>
@@ -881,9 +905,10 @@ export default function DispatchesPage() {
                   <input
                     type="number"
                     min="1"
+                    step="1"
                     required
                     value={editDispatchedPieces}
-                    onChange={(e) => setEditDispatchedPieces(parseInt(e.target.value, 10) || 0)}
+                    onChange={(e) => setEditDispatchedPieces(e.target.value)}
                     className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-bold text-slate-900 font-sans"
                   />
                 </div>
@@ -894,11 +919,11 @@ export default function DispatchesPage() {
                   </label>
                   <input
                     type="number"
-                    step="0.001"
-                    min="0.001"
+                    step="any"
+                    min="0"
                     required
                     value={editDispatchedWeightMt}
-                    onChange={(e) => setEditDispatchedWeightMt(parseFloat(e.target.value) || 0)}
+                    onChange={(e) => setEditDispatchedWeightMt(e.target.value)}
                     className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-bold text-slate-900 font-sans"
                   />
                 </div>

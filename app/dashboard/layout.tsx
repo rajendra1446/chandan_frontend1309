@@ -37,12 +37,12 @@ export default function DashboardLayout({
 
   return (
     <SidebarProvider>
-      <div className="flex h-screen overflow-hidden bg-[#f8fafc] text-slate-900 font-sans">
+      <div className="flex h-screen overflow-hidden bg-[#f8fafc] text-slate-900 font-sans w-full">
         {/* Responsive Sidebar (Static on desktop, drawer on mobile) */}
         <Sidebar />
 
         {/* Main Content Area */}
-        <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+        <div className="flex-1 flex flex-col min-w-0 overflow-y-auto w-full transition-all duration-300">
           {children}
         </div>
       </div>
