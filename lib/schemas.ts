@@ -69,6 +69,8 @@ export const dispatchSchema = z.object({
 export const finishedProductSchema = z.object({
   heat_number: z.string().min(2, "Heat number is required").toUpperCase(),
   dispatch_id: z.string().optional(),
+  cutting_id: z.string().optional(),
+  cut_pieces_consumed: z.number().int().min(0).optional(),
   finished_product_name: z.string().min(2, "Product name is required (e.g. SS 304 Wire Rod in Coils)"),
   finished_size: z.string().min(1, "Size is required (e.g. 5.5 mm)"),
   standard_specification: z.string().optional().default("ASTM A276 / EN 10088-3"),
@@ -86,6 +88,18 @@ export const finishedProductSchema = z.object({
   scrap_reason: z.string().optional(),
   returned_to: z.string().optional(),
   return_reason: z.string().optional()
+});
+
+export const furtherCuttingSchema = z.object({
+  heat_number: z.string().min(2, "Heat number is required").toUpperCase(),
+  dispatch_id: z.string().min(1, "Dispatch manifest is required"),
+  plant_name: z.string().optional(),
+  original_length_meters: z.number().gt(0, "Original cutting length must be greater than 0"),
+  transferred_billets_cut: z.number().int().min(1, "Number of transferred billets to cut must be at least 1"),
+  new_length_meters: z.number().gt(0, "New cutting length must be greater than 0"),
+  pieces_produced: z.number().int().min(1, "Pieces produced must be at least 1"),
+  weight_produced_mt: z.number().gt(0, "Actual weight of cut pieces must be entered manually and be greater than 0"),
+  remarks: z.string().optional()
 });
 
 export const rejectionSchema = z.object({

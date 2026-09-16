@@ -38,9 +38,9 @@ export default function BilletsPage() {
 
   // New Length State in Lengths modal
   const [isAddingLength, setIsAddingLength] = useState(false);
-  const [newLengthMeters, setNewLengthMeters] = useState<number>(0);
-  const [newPieceCount, setNewPieceCount] = useState<number>(0);
-  const [newWeightPerPieceKg, setNewWeightPerPieceKg] = useState<number>(0);
+  const [newLengthMeters, setNewLengthMeters] = useState<string>("");
+  const [newPieceCount, setNewPieceCount] = useState<string>("");
+  const [newWeightPerPieceKg, setNewWeightPerPieceKg] = useState<string>("");
 
   // Cast Heat Form State (clean dynamic inputs)
   const [heatNumber, setHeatNumber] = useState("");
@@ -49,38 +49,25 @@ export default function BilletsPage() {
   const [remarks, setRemarks] = useState("");
 
   const [lengths, setLengths] = useState<Array<{
-    length_meters: number;
-    piece_count: number;
-    weight_per_piece_kg?: number;
-    total_weight_mt?: number;
+    length_meters: string | number;
+    piece_count: string | number;
+    weight_per_piece_kg: string | number;
+    total_weight_mt: string | number;
   }>>([
-    { length_meters: 0, piece_count: 0, weight_per_piece_kg: 0, total_weight_mt: 0 }
+    { length_meters: "", piece_count: "", weight_per_piece_kg: "", total_weight_mt: "" }
   ]);
 
-  // Helper to calculate piece weight and total MT
-  const calculateWeight = (lengthM: number, pcs: number, sec: string) => {
-    let wtPerM = 113.04;
-    const match = sec.match(/(\d+(?:\.\d+)?)\s*[xX*]\s*(\d+(?:\.\d+)?)/);
-    if (match) {
-      const w = Number(match[1]) / 1000;
-      const h = Number(match[2]) / 1000;
-      wtPerM = Number((w * h * 7850).toFixed(2));
-    }
-    const pcWt = Number((wtPerM * lengthM).toFixed(2));
-    const totMt = Number(((pcWt * pcs) / 1000).toFixed(3));
-    return { pcWt, totMt };
-  };
-
-  // Compute live aggregates taking manual weights into account
+  // Compute live aggregates taking manual weights into account (no auto-calculation)
   const totalPiecesSum = lengths.reduce((acc, l) => acc + (Number(l.piece_count) || 0), 0);
   const totalWeightSumMt = Number(
     lengths
       .reduce((acc, l) => {
-        if (l.total_weight_mt !== undefined && l.total_weight_mt > 0) {
+        if (l.total_weight_mt !== "" && l.total_weight_mt !== undefined && Number(l.total_weight_mt) > 0) {
           return acc + Number(l.total_weight_mt);
+        } else if (l.weight_per_piece_kg !== "" && l.weight_per_piece_kg !== undefined && Number(l.weight_per_piece_kg) > 0 && l.piece_count) {
+          return acc + (Number(l.weight_per_piece_kg) * Number(l.piece_count)) / 1000;
         }
-        const { totMt } = calculateWeight(l.length_meters, l.piece_count, section);
-        return acc + totMt;
+        return acc;
       }, 0)
       .toFixed(3)
   );
@@ -129,7 +116,7 @@ export default function BilletsPage() {
       setGrade("");
       setSection("");
       setRemarks("");
-      setLengths([{ length_meters: 0, piece_count: 0, weight_per_piece_kg: 0, total_weight_mt: 0 }]);
+      setLengths([{ length_meters: "", piece_count: "", weight_per_piece_kg: "", total_weight_mt: "" }]);
     },
     onError: (err: any) => {
       setFormError(err.message || "Failed to cast heat.");
@@ -231,7 +218,7 @@ export default function BilletsPage() {
   };
 
   const handleAddLengthRow = () => {
-    setLengths([...lengths, { length_meters: 6.0, piece_count: 5 }]);
+    setLengths([...lengths, { length_meters: "", piece_count: "", weight_per_piece_kg: "", total_weight_mt: "" }]);
   };
 
   const handleRemoveLengthRow = (index: number) => {
@@ -239,23 +226,9 @@ export default function BilletsPage() {
     setLengths(lengths.filter((_, idx) => idx !== index));
   };
 
-  const handleLengthChange = (index: number, field: string, value: number) => {
+  const handleLengthChange = (index: number, field: string, value: string) => {
     const updated = [...lengths];
     updated[index] = { ...updated[index], [field]: value };
-
-    const row = updated[index];
-    if (field === "length_meters" || field === "piece_count") {
-      const { pcWt, totMt } = calculateWeight(row.length_meters, row.piece_count, section);
-      updated[index].weight_per_piece_kg = pcWt;
-      updated[index].total_weight_mt = totMt;
-    } else if (field === "weight_per_piece_kg") {
-      const pcs = row.piece_count || 1;
-      updated[index].total_weight_mt = Number(((value * pcs) / 1000).toFixed(3));
-    } else if (field === "total_weight_mt") {
-      const pcs = row.piece_count || 1;
-      updated[index].weight_per_piece_kg = Number(((value * 1000) / pcs).toFixed(2));
-    }
-
     setLengths(updated);
   };
 
@@ -272,8 +245,8 @@ export default function BilletsPage() {
         lengths: lengths.map((l) => ({
           length_meters: Number(l.length_meters),
           piece_count: Number(l.piece_count),
-          weight_per_piece_kg: l.weight_per_piece_kg !== undefined && l.weight_per_piece_kg > 0 ? Number(l.weight_per_piece_kg) : undefined,
-          total_weight_mt: l.total_weight_mt !== undefined && l.total_weight_mt > 0 ? Number(l.total_weight_mt) : undefined
+          weight_per_piece_kg: l.weight_per_piece_kg !== "" && l.weight_per_piece_kg !== undefined && Number(l.weight_per_piece_kg) > 0 ? Number(l.weight_per_piece_kg) : undefined,
+          total_weight_mt: l.total_weight_mt !== "" && l.total_weight_mt !== undefined && Number(l.total_weight_mt) > 0 ? Number(l.total_weight_mt) : undefined
         }))
       });
       createMutation.mutate(validated);
@@ -637,49 +610,44 @@ export default function BilletsPage() {
 
             {/* Dynamic Rows */}
             <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-              {lengths.map((row, idx) => {
-                const { pcWt, totMt } = calculateWeight(row.length_meters, row.piece_count, section);
-                const displayPcWt = row.weight_per_piece_kg !== undefined ? row.weight_per_piece_kg : pcWt;
-                const displayTotMt = row.total_weight_mt !== undefined ? row.total_weight_mt : totMt;
+              {lengths.map((row, idx) => (
+                <div
+                  key={idx}
+                  className="p-3 bg-white rounded-xl border border-slate-200/80 grid grid-cols-2 sm:flex sm:items-center sm:gap-2.5 gap-2.5 shadow-2xs relative"
+                >
+                  <div className="col-span-1 sm:w-28">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">
+                      Length (m)
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      required
+                      value={row.length_meters}
+                      onChange={(e) =>
+                        handleLengthChange(idx, "length_meters", e.target.value)
+                      }
+                      className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg"
+                    />
+                  </div>
 
-                return (
-                  <div
-                    key={idx}
-                    className="p-3 bg-white rounded-xl border border-slate-200/80 grid grid-cols-2 sm:flex sm:items-center sm:gap-2.5 gap-2.5 shadow-2xs relative"
-                  >
-                    <div className="col-span-1 sm:w-28">
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">
-                        Length (m)
-                      </label>
-                      <input
-                        type="number"
-                        step="any"
-                        min="0"
-                        required
-                        value={row.length_meters}
-                        onChange={(e) =>
-                          handleLengthChange(idx, "length_meters", parseFloat(e.target.value) || 0)
-                        }
-                        className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg"
-                      />
-                    </div>
-
-                    <div className="col-span-1 sm:w-24">
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">
-                        Pieces
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        required
-                        value={row.piece_count}
-                        onChange={(e) =>
-                          handleLengthChange(idx, "piece_count", parseInt(e.target.value, 10) || 0)
-                        }
-                        className="w-full px-2.5 py-1.5 text-xs font-bold bg-slate-50 border border-slate-200 rounded-lg"
-                      />
-                    </div>
+                  <div className="col-span-1 sm:w-24">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">
+                      Pieces
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      required
+                      value={row.piece_count}
+                      onChange={(e) =>
+                        handleLengthChange(idx, "piece_count", e.target.value)
+                      }
+                      className="w-full px-2.5 py-1.5 text-xs font-bold bg-slate-50 border border-slate-200 rounded-lg"
+                    />
+                  </div>
 
                     <div className="col-span-1 sm:w-32">
                       <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5" title="Manual weight input per billet cut">
@@ -689,13 +657,12 @@ export default function BilletsPage() {
                         type="number"
                         step="any"
                         min="0"
-                        required
-                        value={displayPcWt}
+                        value={row.weight_per_piece_kg}
                         onChange={(e) =>
-                          handleLengthChange(idx, "weight_per_piece_kg", parseFloat(e.target.value) || 0)
+                          handleLengthChange(idx, "weight_per_piece_kg", e.target.value)
                         }
                         className="w-full px-2.5 py-1.5 text-xs font-bold bg-slate-50 border border-slate-200 rounded-lg text-slate-800"
-                        placeholder="e.g. 836.5"
+                        placeholder="Manual wt (kg)"
                       />
                     </div>
 
@@ -707,13 +674,12 @@ export default function BilletsPage() {
                         type="number"
                         step="any"
                         min="0"
-                        required
-                        value={displayTotMt}
+                        value={row.total_weight_mt}
                         onChange={(e) =>
-                          handleLengthChange(idx, "total_weight_mt", parseFloat(e.target.value) || 0)
+                          handleLengthChange(idx, "total_weight_mt", e.target.value)
                         }
                         className="w-full px-2.5 py-1.5 text-xs font-black bg-slate-50 border border-slate-200 rounded-lg text-slate-900"
-                        placeholder="e.g. 8.365"
+                        placeholder="Manual MT"
                       />
                     </div>
 
@@ -729,8 +695,7 @@ export default function BilletsPage() {
                       </button>
                     </div>
                   </div>
-                );
-              })}
+                ))}
             </div>
 
             {/* Live Combined Totals Header */}
@@ -839,11 +804,8 @@ export default function BilletsPage() {
                         min="0"
                         required
                         value={newLengthMeters}
-                        onChange={(e) => {
-                          const m = parseFloat(e.target.value) || 0;
-                          setNewLengthMeters(m);
-                          setNewWeightPerPieceKg(Number((m * 113.04).toFixed(1)));
-                        }}
+                        onChange={(e) => setNewLengthMeters(e.target.value)}
+                        placeholder="e.g. 7.4"
                         className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500 font-bold"
                       />
                     </div>
@@ -855,7 +817,8 @@ export default function BilletsPage() {
                         step="1"
                         required
                         value={newPieceCount}
-                        onChange={(e) => setNewPieceCount(parseInt(e.target.value, 10) || 0)}
+                        onChange={(e) => setNewPieceCount(e.target.value)}
+                        placeholder="e.g. 10"
                         className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500 font-bold"
                       />
                     </div>
@@ -867,7 +830,8 @@ export default function BilletsPage() {
                         min="0"
                         required
                         value={newWeightPerPieceKg}
-                        onChange={(e) => setNewWeightPerPieceKg(parseFloat(e.target.value) || 0)}
+                        onChange={(e) => setNewWeightPerPieceKg(e.target.value)}
+                        placeholder="e.g. 836.5"
                         className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500 font-bold"
                       />
                     </div>

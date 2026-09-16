@@ -17,7 +17,8 @@ import {
   Trash2,
   Pencil,
   FileSpreadsheet,
-  ArrowLeftRight
+  ArrowLeftRight,
+  Scissors
 } from "lucide-react";
 import Topbar from "../../../components/Topbar";
 import StatCard from "../../../components/StatCard";
@@ -48,6 +49,16 @@ export default function DispatchesPage() {
   const [editStatus, setEditStatus] = useState("DISPATCHED");
   const [editRemarks, setEditRemarks] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
+
+  // Further Cutting State
+  const [cuttingDispatch, setCuttingDispatch] = useState<any | null>(null);
+  const [cutOrigLength, setCutOrigLength] = useState<string>("");
+  const [cutBilletsCount, setCutBilletsCount] = useState<string>("");
+  const [cutNewLength, setCutNewLength] = useState<string>("");
+  const [cutPiecesProduced, setCutPiecesProduced] = useState<string>("");
+  const [cutWeightMt, setCutWeightMt] = useState<string>(""); // starts empty by default
+  const [cutRemarks, setCutRemarks] = useState("");
+  const [cutError, setCutError] = useState<string | null>(null);
 
   // Length breakdown lines for dispatch
   const [breakdown, setBreakdown] = useState<Array<{
@@ -99,15 +110,13 @@ export default function DispatchesPage() {
     setHeatNumber(hNo);
     const found = heats.find((h: any) => h.heat_number === hNo);
     if (found && found.lengths && found.lengths.length > 0) {
-      // populate default breakdown row from first length
+      // populate default breakdown row from first length with EMPTY manual weight
       const firstL = found.lengths[0];
       const pcs = Math.min(firstL.available_pieces || firstL.piece_count || 4, 4);
-      const wtPerPc = firstL.weight_per_piece_kg || 836.5;
-      const wtMt = Number(((pcs * wtPerPc) / 1000).toFixed(3));
       setBreakdown([{
         length_meters: firstL.length_meters,
         pieces: pcs,
-        weight_mt: wtMt
+        weight_mt: ""
       }]);
     }
   };
@@ -166,6 +175,98 @@ export default function DispatchesPage() {
       setEditError(err.message || "Failed to update dispatch record.");
     }
   });
+
+  // Query cuttings for selected cuttingDispatch
+  const {
+    data: cuttingsData,
+    refetch: refetchCuttings,
+    isLoading: isCuttingsLoading
+  } = useQuery({
+    queryKey: ["further-cuttings", cuttingDispatch?.id || cuttingDispatch?._id],
+    queryFn: () => api.get(`/billets/cuttings?dispatch_id=${cuttingDispatch?.id || cuttingDispatch?._id}`),
+    enabled: !!cuttingDispatch
+  });
+
+  const dispatchCuttings = cuttingsData?.data || [];
+
+  const createCuttingMutation = useMutation({
+    mutationFn: (newCutting: any) => api.post("/billets/cuttings", newCutting),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["further-cuttings"] });
+      queryClient.invalidateQueries({ queryKey: ["dispatches"] });
+      queryClient.invalidateQueries({ queryKey: ["heat-traceability"] });
+      queryClient.invalidateQueries({ queryKey: ["traceability-summary"] });
+      setCutError(null);
+      setCutOrigLength("");
+      setCutBilletsCount("");
+      setCutNewLength("");
+      setCutPiecesProduced("");
+      setCutWeightMt("");
+      setCutRemarks("");
+      refetchCuttings();
+    },
+    onError: (err: any) => {
+      setCutError(err.message || "Failed to record plant further cutting.");
+    }
+  });
+
+  const handleOpenFurtherCutting = (dispatch: any) => {
+    setCuttingDispatch(dispatch);
+    setCutError(null);
+    const bd = dispatch.lengths_breakdown || [];
+    setCutOrigLength(bd.length > 0 ? String(bd[0].length_meters) : "");
+    setCutBilletsCount("1");
+    setCutNewLength("");
+    setCutPiecesProduced("");
+    setCutWeightMt(""); // empty by default
+    setCutRemarks("");
+  };
+
+  const handleFurtherCuttingSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setCutError(null);
+    if (!cuttingDispatch) return;
+
+    const origL = parseFloat(cutOrigLength);
+    const cutCount = parseInt(cutBilletsCount, 10);
+    const newL = parseFloat(cutNewLength);
+    const pcsProd = parseInt(cutPiecesProduced, 10);
+    const wtMt = parseFloat(cutWeightMt);
+
+    if (isNaN(origL) || origL <= 0) {
+      setCutError("Original billet cutting length must be greater than zero.");
+      return;
+    }
+    if (isNaN(cutCount) || cutCount <= 0) {
+      setCutError("Number of transferred billets to cut must be at least 1.");
+      return;
+    }
+    if (isNaN(newL) || newL <= 0) {
+      setCutError("New cutting length at receiving plant must be greater than zero.");
+      return;
+    }
+    if (isNaN(pcsProd) || pcsProd <= 0) {
+      setCutError("Number of pieces produced after further cutting must be at least 1.");
+      return;
+    }
+    if (isNaN(wtMt) || wtMt <= 0) {
+      setCutError("Actual weight of pieces produced must be entered manually and be greater than 0.");
+      return;
+    }
+
+    createCuttingMutation.mutate({
+      heat_number: cuttingDispatch.heat_number,
+      dispatch_id: cuttingDispatch.id || cuttingDispatch._id,
+      dispatch_number: cuttingDispatch.dispatch_number,
+      plant_name: cuttingDispatch.target_plant,
+      original_length_meters: origL,
+      transferred_billets_cut: cutCount,
+      new_length_meters: newL,
+      pieces_produced: pcsProd,
+      weight_produced_mt: wtMt,
+      remarks: cutRemarks || undefined
+    });
+  };
 
   const handleOpenEdit = (dispatch: any) => {
     setEditingDispatch(dispatch);
@@ -239,7 +340,7 @@ export default function DispatchesPage() {
   const handleAddBreakdownRow = () => {
     setBreakdown([
       ...breakdown,
-      { length_meters: 0, pieces: 0, weight_mt: 0 }
+      { length_meters: "", pieces: "", weight_mt: "" }
     ]);
   };
 
@@ -251,17 +352,7 @@ export default function DispatchesPage() {
   const handleBreakdownChange = (index: number, field: string, val: string | number) => {
     const updated = [...breakdown];
     (updated[index] as any)[field] = val;
-
-    // Auto-recalculate MT if length or pieces change (default cross-section ~113.04 kg/m)
-    if (field === "length_meters" || field === "pieces") {
-      const len = Number(field === "length_meters" ? val : updated[index].length_meters) || 0;
-      const pcs = Number(field === "pieces" ? val : updated[index].pieces) || 0;
-      if (len > 0 && pcs > 0) {
-        const autoMt = Number(((len * 113.04 * pcs) / 1000).toFixed(4));
-        updated[index].weight_mt = autoMt;
-      }
-    }
-
+    // Strictly manual weight entry: no automatic weight calculation
     setBreakdown(updated);
   };
 
@@ -366,6 +457,13 @@ export default function DispatchesPage() {
             title="View Details"
           >
             <Eye className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => handleOpenFurtherCutting(row.original)}
+            className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+            title="Record Receiving Plant Further Cutting & Piece Tracking"
+          >
+            <Scissors className="w-4 h-4 text-amber-600" />
           </button>
           <button
             onClick={() => handleOpenEdit(row.original)}
@@ -658,7 +756,8 @@ export default function DispatchesPage() {
                         onChange={(e) =>
                           handleBreakdownChange(idx, "weight_mt", e.target.value)
                         }
-                        className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-lg font-bold text-slate-900 bg-slate-50 focus:ring-1 focus:ring-orange-500"
+                        placeholder="Manual MT"
+                        className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-lg font-bold text-slate-900 bg-white focus:ring-1 focus:ring-orange-500"
                       />
                     </div>
 
@@ -836,7 +935,19 @@ export default function DispatchesPage() {
                   Delete Record
                 </button>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const d = selectedDispatch;
+                      setSelectedDispatch(null);
+                      handleOpenFurtherCutting(d);
+                    }}
+                    className="px-3 py-1.5 text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Scissors className="w-3.5 h-3.5 text-amber-600" />
+                    Further Cut Billets at Plant
+                  </button>
                   <Link
                     href={`/dashboard/traceability?heat=${selectedDispatch.heat_number}`}
                     className="px-3 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 rounded-xl shadow-xs transition-all flex items-center gap-1"
@@ -975,6 +1086,226 @@ export default function DispatchesPage() {
                 </button>
               </div>
             </form>
+          </Modal>
+        )}
+
+        {/* RECEIVING PLANT FURTHER CUTTING MODAL */}
+        {cuttingDispatch && (
+          <Modal
+            isOpen={!!cuttingDispatch}
+            onClose={() => setCuttingDispatch(null)}
+            title={`Receiving Plant Further Cutting: Heat ${cuttingDispatch.heat_number}`}
+            subtitle={`Plant: ${formatPlantName(cuttingDispatch.target_plant)} | Dispatch #${cuttingDispatch.dispatch_number}`}
+            size="lg"
+          >
+            <div className="space-y-5 font-sans">
+              {cutError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-700 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{cutError}</span>
+                </div>
+              )}
+
+              {/* Transferred Billets Overview Banner */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl text-xs flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <span className="text-slate-500 block text-[11px]">Transferred to Plant:</span>
+                  <span className="font-bold text-slate-900">{formatPlantName(cuttingDispatch.target_plant)}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[11px]">Total Transferred Billets:</span>
+                  <span className="font-bold text-slate-900">{cuttingDispatch.dispatched_pieces} pcs ({Number(cuttingDispatch.dispatched_weight_mt).toFixed(3)} MT)</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[11px]">Original Cutting Lengths:</span>
+                  <div className="flex flex-wrap gap-1 mt-0.5">
+                    {(cuttingDispatch.lengths_breakdown || []).map((b: any, idx: number) => (
+                      <span key={idx} className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-bold text-[10px] text-slate-800">
+                        {b.length_meters}m ({b.pieces} pcs)
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Further Cutting Record Form */}
+              <form onSubmit={handleFurtherCuttingSubmit} className="p-4 bg-amber-50/40 border border-amber-200/80 rounded-2xl space-y-4">
+                <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
+                  <Scissors className="w-4 h-4 text-amber-600" />
+                  <span>Cut Transferred Billets into New Lengths</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Original Billet Cutting Length (M) *
+                    </label>
+                    <select
+                      value={cutOrigLength}
+                      onChange={(e) => setCutOrigLength(e.target.value)}
+                      required
+                      className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-bold text-slate-900"
+                    >
+                      <option value="">-- Select Original Length --</option>
+                      {(cuttingDispatch.lengths_breakdown || []).map((b: any, idx: number) => (
+                        <option key={idx} value={b.length_meters}>
+                          {b.length_meters} meters ({b.pieces} pcs transferred)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Transferred Billets to Cut *
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      required
+                      value={cutBilletsCount}
+                      onChange={(e) => setCutBilletsCount(e.target.value)}
+                      placeholder="e.g. 2 billets"
+                      className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-bold text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      New Cutting Length at Receiving Plant (M) *
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0.1"
+                      required
+                      value={cutNewLength}
+                      onChange={(e) => setCutNewLength(e.target.value)}
+                      placeholder="e.g. 3.7"
+                      className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-bold text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Pieces Produced After Further Cutting *
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      required
+                      value={cutPiecesProduced}
+                      onChange={(e) => setCutPiecesProduced(e.target.value)}
+                      placeholder="e.g. 4 pcs"
+                      className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-bold text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1" title="Actual weighbridge or scale weight. System does not auto-calculate.">
+                      Actual Weight Produced (MT) *
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0.0001"
+                      required
+                      value={cutWeightMt}
+                      onChange={(e) => setCutWeightMt(e.target.value)}
+                      placeholder="Enter actual weight (MT)"
+                      className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-bold text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Shift Remarks
+                    </label>
+                    <input
+                      type="text"
+                      value={cutRemarks}
+                      onChange={(e) => setCutRemarks(e.target.value)}
+                      placeholder="e.g. Cut for rolling mill #2"
+                      className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-medium text-slate-800"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="submit"
+                    disabled={createCuttingMutation.isPending}
+                    className="px-4 py-2 text-xs font-bold text-white bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 rounded-xl shadow-md shadow-orange-500/20 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <Scissors className="w-3.5 h-3.5" />
+                    <span>{createCuttingMutation.isPending ? "Recording Cutting..." : "Save Plant Further Cutting"}</span>
+                  </button>
+                </div>
+              </form>
+
+              {/* Existing Cuttings Table for this Dispatch */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                    Recorded Further Cuttings & Piece Tracking for Dispatch #{cuttingDispatch.dispatch_number}
+                  </h4>
+                  <span className="text-[11px] font-semibold text-slate-500 font-mono">
+                    {dispatchCuttings.length} Cutting Batches
+                  </span>
+                </div>
+
+                {isCuttingsLoading ? (
+                  <div className="p-4 text-center text-xs text-slate-500">Loading cut pieces...</div>
+                ) : dispatchCuttings.length === 0 ? (
+                  <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl text-center text-xs text-slate-500">
+                    No further cuttings recorded yet for this dispatch at {formatPlantName(cuttingDispatch.target_plant)}.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto border border-slate-200/80 rounded-xl">
+                    <table className="min-w-full text-xs text-left whitespace-nowrap">
+                      <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
+                        <tr>
+                          <th className="py-2.5 px-3">Cutting Batch #</th>
+                          <th className="py-2.5 px-3">Orig Length</th>
+                          <th className="py-2.5 px-3">Billets Cut</th>
+                          <th className="py-2.5 px-3">New Length</th>
+                          <th className="py-2.5 px-3">Pieces Produced</th>
+                          <th className="py-2.5 px-3">Pieces Consumed</th>
+                          <th className="py-2.5 px-3">Remaining Pieces</th>
+                          <th className="py-2.5 px-3">Remaining Weight</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-mono">
+                        {dispatchCuttings.map((c: any) => (
+                          <tr key={c.id || c._id} className="hover:bg-amber-50/20">
+                            <td className="py-2.5 px-3 font-bold text-amber-700">{c.cutting_batch_no}</td>
+                            <td className="py-2.5 px-3 font-bold text-slate-800">{c.original_length_meters}m</td>
+                            <td className="py-2.5 px-3 font-semibold text-slate-800">{c.transferred_billets_cut} pcs</td>
+                            <td className="py-2.5 px-3 font-bold text-amber-800">{c.new_length_meters}m</td>
+                            <td className="py-2.5 px-3 font-bold text-slate-900">{c.pieces_produced} pcs</td>
+                            <td className="py-2.5 px-3 text-orange-600 font-semibold">{c.pieces_consumed || 0} pcs</td>
+                            <td className="py-2.5 px-3 font-bold text-emerald-600">{c.remaining_pieces} pcs</td>
+                            <td className="py-2.5 px-3 font-bold text-emerald-700">{Number(c.remaining_weight_mt).toFixed(3)} MT</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end pt-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setCuttingDispatch(null)}
+                  className="px-4 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </Modal>
         )}
       </main>

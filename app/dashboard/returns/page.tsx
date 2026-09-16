@@ -637,10 +637,9 @@ export default function PlantReturnsPage() {
                         const retPcs = rets.reduce((sum: number, r: any) => sum + (Number(r.returned_pieces) || 0), 0);
 
                         const remWt = Number(Math.max(0, d.dispatched_weight_mt - finWt - scrWt - retWt).toFixed(3));
-                        const remPcs = Math.max(0, d.dispatched_pieces - retPcs);
-
-                        setReturnedPieces(String(remPcs));
-                        setReturnedWeightMt(String(remWt));
+                        const remPcs = Math.max(0, (Number(d.dispatched_pieces) || 0) - retPcs);
+                        setReturnedPieces(String(remPcs > 0 ? remPcs : ""));
+                        // Manual weight entry only: keep returnedWeightMt empty for user input
                       }
                     }}
                     className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-medium text-slate-800 font-sans"

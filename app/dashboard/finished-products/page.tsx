@@ -45,6 +45,8 @@ export default function FinishedProductsPage() {
   const [formData, setFormData] = useState({
     heat_number: "",
     dispatch_id: "",
+    cutting_id: "",
+    cut_pieces_consumed: "",
     finished_product_name: "",
     finished_size: "",
     standard_specification: "ASTM A276 / EN 10088-3",
@@ -114,11 +116,27 @@ export default function FinishedProductsPage() {
     enabled: !!formData.heat_number
   });
 
+  // 5. Fetch Further Cuttings for selected dispatch / heat
+  const { data: cuttingsData } = useQuery({
+    queryKey: ["cuttings", formData.dispatch_id, formData.heat_number],
+    queryFn: () => {
+      if (formData.dispatch_id) {
+        return api.get(`/cuttings?dispatch_id=${formData.dispatch_id}`);
+      }
+      if (formData.heat_number) {
+        return api.get(`/cuttings?heat_number=${formData.heat_number}`);
+      }
+      return Promise.resolve({ data: [] });
+    },
+    enabled: !!formData.dispatch_id || !!formData.heat_number
+  });
+
   const products = productsData?.data || [];
   const pagination = productsData?.pagination;
   const heats = heatsData?.data || [];
   const plantsList = plantsData?.data || [];
   const heatDispatches = heatDispatchesData?.data || [];
+  const cuttingsList = cuttingsData?.data || [];
 
   // Create Product Mutation
   const createMutation = useMutation({
@@ -132,11 +150,14 @@ export default function FinishedProductsPage() {
       queryClient.invalidateQueries({ queryKey: ["dashboard-metrics"] });
       queryClient.invalidateQueries({ queryKey: ["traceability-summary"] });
       queryClient.invalidateQueries({ queryKey: ["heat-traceability"] });
+      queryClient.invalidateQueries({ queryKey: ["cuttings"] });
       setIsModalOpen(false);
       setFormError(null);
       setFormData({
         heat_number: "",
         dispatch_id: "",
+        cutting_id: "",
+        cut_pieces_consumed: "",
         finished_product_name: "",
         finished_size: "",
         standard_specification: "ASTM A276 / EN 10088-3",
@@ -264,7 +285,9 @@ export default function FinishedProductsPage() {
       finished_weight_mt: finishWt,
       mill_name: formData.mill_name || "RM10 - New Plant Rolling Mill 10",
       lot_number: formData.lot_number || undefined,
-      remarks: formData.remarks || undefined
+      remarks: formData.remarks || undefined,
+      cutting_id: formData.cutting_id || undefined,
+      cut_pieces_consumed: parseInt(formData.cut_pieces_consumed, 10) > 0 ? parseInt(formData.cut_pieces_consumed, 10) : undefined
     };
 
     if (formData.include_scrap && numScrap > 0) {
@@ -609,8 +632,10 @@ export default function FinishedProductsPage() {
                   setFormData({
                     ...formData,
                     dispatch_id: dId,
-                    mill_name: found ? formatPlantName(found.target_plant) : formData.mill_name,
-                    input_billet_weight_mt: found?.dispatched_weight_mt ? String(found.dispatched_weight_mt) : formData.input_billet_weight_mt
+                    cutting_id: "",
+                    cut_pieces_consumed: "",
+                    mill_name: found ? formatPlantName(found.target_plant) : formData.mill_name
+                    // Manual weight entry: input_billet_weight_mt is entered manually by user
                   });
                 }}
                 className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-sans"
@@ -622,6 +647,53 @@ export default function FinishedProductsPage() {
                   </option>
                 ))}
               </select>
+            </div>
+          )}
+
+          {/* Optional: Receiving Plant Further Cut Pieces Consumption */}
+          {cuttingsList.length > 0 && (
+            <div className="p-3 bg-indigo-50/70 border border-indigo-200/80 rounded-xl space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold text-indigo-900">
+                  Receiving Plant Further Cut Pieces Consumption (Optional)
+                </label>
+                <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-md">
+                  Piece Traceability
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                    Select Cut Batch
+                  </label>
+                  <select
+                    value={formData.cutting_id}
+                    onChange={(e) => setFormData({ ...formData, cutting_id: e.target.value })}
+                    className="w-full px-3 py-2 text-xs bg-white border border-indigo-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  >
+                    <option value="">-- Select Cut Batch (Optional) --</option>
+                    {cuttingsList.map((c: any) => (
+                      <option key={c.id || c._id} value={c.id || c._id}>
+                        {c.cutting_batch_no} ({c.original_length_meters}m → {c.new_length_meters}m, {c.remaining_pieces ?? c.pieces_produced} rem pcs)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                    Pieces Consumed in this Production
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={formData.cut_pieces_consumed}
+                    onChange={(e) => setFormData({ ...formData, cut_pieces_consumed: e.target.value })}
+                    placeholder="e.g. 10 pcs"
+                    disabled={!formData.cutting_id}
+                    className="w-full px-3 py-2 text-xs bg-white border border-indigo-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 disabled:opacity-50"
+                  />
+                </div>
+              </div>
             </div>
           )}
 
@@ -733,7 +805,7 @@ export default function FinishedProductsPage() {
                       setFormData({
                         ...formData,
                         include_scrap: checked,
-                        scrap_weight_mt: checked && !formData.scrap_weight_mt ? String(Number((consumptionDelta - numReturn).toFixed(3)) > 0 ? (consumptionDelta - numReturn).toFixed(3) : "") : formData.scrap_weight_mt
+                        scrap_weight_mt: formData.scrap_weight_mt
                       });
                     }}
                     className="w-4 h-4 text-orange-600 rounded border-slate-300 focus:ring-orange-500 cursor-pointer"
